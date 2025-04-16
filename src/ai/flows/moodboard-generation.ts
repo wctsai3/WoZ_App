@@ -1,4 +1,4 @@
-// 'use server';
+'use server';
 /**
  * @fileOverview Moodboard generation flow.
  *
@@ -6,8 +6,6 @@
  * - MoodboardInput - The input type for the generateMoodboard function.
  * - MoodboardOutput - The return type for the generateMoodboard function.
  */
-
-'use server';
 
 import {ai} from '@/ai/ai-instance';
 import {z} from 'genkit';
@@ -56,6 +54,20 @@ const moodboardGenerationFlow = ai.defineFlow<typeof MoodboardInputSchema, typeo
   },
   async input => {
     const {output} = await moodboardPrompt(input);
-    return output!;
+    // Ensure that imageUrls are valid URLs
+    const validatedImageUrls = output?.imageUrls?.map(url => {
+      try {
+        new URL(url);
+        return url;
+      } catch (e) {
+        console.error(`Invalid URL found: ${url}. Replacing with placeholder.`);
+        return `https://picsum.photos/400/300`; // Replace invalid URLs with a default placeholder
+      }
+    }) || [];
+
+    return {
+      moodboardDescription: output?.moodboardDescription || 'A beautiful moodboard',
+      imageUrls: validatedImageUrls.length > 0 ? validatedImageUrls : ['https://picsum.photos/400/300'], // Provide a default image if no valid URLs are available
+    };
   }
 );
