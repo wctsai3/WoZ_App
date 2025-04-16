@@ -7,6 +7,17 @@ import {useSearchParams} from 'next/navigation';
 import {useEffect, useState} from 'react';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
+import {Textarea} from '@/components/ui/textarea';
+import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from '@/components/ui/form';
+import {useForm} from 'react-hook-form';
+import {zodResolver} from '@hookform/resolvers/zod';
+import {z} from 'zod';
+
+const feedbackSchema = z.object({
+  feedback: z.string().min(10, {
+    message: 'Feedback must be at least 10 characters.',
+  }),
+});
 
 export default function MoodboardsPage() {
   const searchParams = useSearchParams();
@@ -17,6 +28,14 @@ export default function MoodboardsPage() {
   const [customerProfile, setCustomerProfile] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<any[] | null>(null);
   const [allSearchParams, setAllSearchParams] = useState<{ [key: string]: string }>({}); // Store all search params
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+
+  const form = useForm<z.infer<typeof feedbackSchema>>({
+    resolver: zodResolver(feedbackSchema),
+    defaultValues: {
+      feedback: '',
+    },
+  });
 
   useEffect(() => {
     const params: { [key: string]: string } = {};
@@ -25,6 +44,24 @@ export default function MoodboardsPage() {
     });
     setAllSearchParams(params);
   }, [searchParams]);
+
+  const regenerateMoodboard = async (updatedCustomerProfile: string) => {
+    // Generate design recommendations based on customer profile and moodboard
+    // For now, use a static moodboard description, later implement moodboard feedback
+    const finalMoodboardDescription = 'A modern, minimalist design with a focus on natural light and neutral colors.';
+    const designRecommendationsResult = await generateDesignRecommendations({
+      customerProfile: updatedCustomerProfile,
+      finalMoodboardDescription,
+    });
+    setRecommendations(designRecommendationsResult?.recommendations || null);
+
+    // Generate moodboard based on customer profile and design recommendations
+    const moodboardResult = await generateMoodboard({
+      customerProfile: updatedCustomerProfile,
+      designRecommendations: designRecommendationsResult?.recommendations || [],
+    });
+    setMoodboard(moodboardResult || null);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,26 +74,29 @@ export default function MoodboardsPage() {
       setCustomerProfile(customerProfileResult?.profileSummary || null);
 
       if (customerProfileResult?.profileSummary) {
-        // Generate design recommendations based on customer profile and moodboard
-        // For now, use a static moodboard description, later implement moodboard feedback
-        const finalMoodboardDescription = 'A modern, minimalist design with a focus on natural light and neutral colors.';
-        const designRecommendationsResult = await generateDesignRecommendations({
-          customerProfile: customerProfileResult.profileSummary,
-          finalMoodboardDescription,
-        });
-        setRecommendations(designRecommendationsResult?.recommendations || null);
-
-        // Generate moodboard based on customer profile and design recommendations
-        const moodboardResult = await generateMoodboard({
-          customerProfile: customerProfileResult.profileSummary,
-          designRecommendations: designRecommendationsResult?.recommendations || [],
-        });
-        setMoodboard(moodboardResult || null);
+        await regenerateMoodboard(customerProfileResult.profileSummary);
       }
     };
 
     fetchData();
-  }, [allSearchParams, searchParams]);
+  }, [allSearchParams, searchParams, feedbackSubmitted]);
+
+  const onSubmit = async (values: z.infer<typeof feedbackSchema>) => {
+    // Update customer profile with feedback
+    const updatedCustomerProfileResult = await generateCustomerProfile({
+      ...allSearchParams,
+      feedback: values.feedback, // Include feedback in the profile generation
+    } as any);
+
+    setCustomerProfile(updatedCustomerProfileResult?.profileSummary || null);
+
+    if (updatedCustomerProfileResult?.profileSummary) {
+      await regenerateMoodboard(updatedCustomerProfileResult.profileSummary);
+    }
+
+    // Set feedbackSubmitted to trigger re-fetch
+    setFeedbackSubmitted(prevState => !prevState);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-2">
@@ -98,7 +138,27 @@ export default function MoodboardsPage() {
                     className="w-full h-48 object-cover rounded-md mb-2 shadow-md"
                   />
                 ))}
-                <Button>Provide Feedback</Button>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="feedback"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Provide Feedback</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="Enter your feedback to refine the moodboard"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button type="submit">Submit Feedback</Button>
+                  </form>
+                </Form>
               </CardContent>
             </Card>
           </div>
