@@ -37,12 +37,6 @@ export default function MoodboardsPage() {
       setCustomerProfile(customerProfileResult?.profileSummary || null);
 
       if (customerProfileResult?.profileSummary) {
-        // Generate moodboard based on customer profile
-        const moodboardResult = await generateMoodboard({
-          customerProfile: customerProfileResult.profileSummary,
-        });
-        setMoodboard(moodboardResult || null);
-
         // Generate design recommendations based on customer profile and moodboard
         // For now, use a static moodboard description, later implement moodboard feedback
         const finalMoodboardDescription = 'A modern, minimalist design with a focus on natural light and neutral colors.';
@@ -51,6 +45,13 @@ export default function MoodboardsPage() {
           finalMoodboardDescription,
         });
         setRecommendations(designRecommendationsResult?.recommendations || null);
+
+        // Generate moodboard based on customer profile and design recommendations
+        const moodboardResult = await generateMoodboard({
+          customerProfile: customerProfileResult.profileSummary,
+          designRecommendations: designRecommendationsResult?.recommendations || [],
+        });
+        setMoodboard(moodboardResult || null);
       }
     };
 
