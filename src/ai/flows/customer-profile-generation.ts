@@ -53,6 +53,28 @@ const customerProfileFlow = ai.defineFlow<
   inputSchema: CustomerProfileInputSchema,
   outputSchema: CustomerProfileOutputSchema,
 }, async input => {
-  const {output} = await prompt({input: JSON.stringify(input, null, 2)});
-  return output!;
+  let retryCount = 0;
+  const maxRetries = 3;
+  let delay = 1000; // Initial delay of 1 second
+
+  while (retryCount < maxRetries) {
+    try {
+      const {output} = await prompt({input: JSON.stringify(input, null, 2)});
+      return output!;
+    } catch (error: any) {
+      if (error.message.includes('429 Too Many Requests')) {
+        retryCount++;
+        console.warn(`Rate limit hit. Retrying in ${delay / 1000} seconds... (Attempt ${retryCount}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+      } else {
+        // If it's not a rate limit error, re-throw it
+        throw error;
+      }
+    }
+  }
+
+  // If we've exhausted all retries, throw an error
+  throw new Error('Failed to generate customer profile after multiple retries due to rate limiting.');
 });
+
