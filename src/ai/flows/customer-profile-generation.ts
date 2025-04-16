@@ -16,7 +16,7 @@ const CustomerProfileInputSchema = z.record(z.string());
 export type CustomerProfileInput = z.infer<typeof CustomerProfileInputSchema>;
 
 const CustomerProfileOutputSchema = z.object({
-  profileSummary: z.string().describe('A summary of the customer profile, including all provided information.'),
+  profileSummary: z.string().describe('A summary of the customer profile, including all provided information. Explicitly mention preferred design styles, color preferences, budget considerations, comfort and usability, lifestyle specifics, and cultural or personal touches.'),
 });
 export type CustomerProfileOutput = z.infer<typeof CustomerProfileOutputSchema>;
 
@@ -31,12 +31,12 @@ const prompt = ai.definePrompt({
   },
   output: {
     schema: z.object({
-      profileSummary: z.string().describe('A summary of the customer profile, including all provided information.'),
+      profileSummary: z.string().describe('A summary of the customer profile, including all provided information. Explicitly mention preferred design styles, color preferences, budget considerations, comfort and usability, lifestyle specifics, and cultural or personal touches.'),
     }),
   },
   prompt: `You are an expert interior designer specializing in understanding client needs and preferences.
 
-  Based on the following information, generate a concise customer profile summary that integrates all available details.  Focus on budget, tastes, goals, and needs based on the data provided.
+  Based on the following information, generate a concise customer profile summary that integrates all available details.  Focus on budget, tastes, goals, and needs based on the data provided.  **Explicitly mention preferred design styles, color preferences, budget considerations, comfort and usability, lifestyle specifics, and cultural or personal touches.**
 
   The input will be a JSON object of key value pairs, where each key represents a design preference and value represents the answer.
   \`\`\`json
