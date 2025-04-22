@@ -1,7 +1,6 @@
 'use client';
 
 import {generateCustomerProfile} from '@/ai/flows/customer-profile-generation';
-import {generateMoodboard} from '@/ai/flows/moodboard-generation';
 import {generateDesignRecommendations} from '@/ai/flows/design-recommendation-output';
 import {useSearchParams} from 'next/navigation';
 import {useEffect, useState} from 'react';
@@ -12,6 +11,7 @@ import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from '@/
 import {useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
+import {Input} from '@/components/ui/input';
 
 const feedbackSchema = z.object({
   feedback: z.string().min(10, {
@@ -21,14 +21,11 @@ const feedbackSchema = z.object({
 
 export default function MoodboardsPage() {
   const searchParams = useSearchParams();
-  const [moodboard, setMoodboard] = useState<{
-    moodboardDescription: string;
-    imageUrls: string[];
-  } | null>(null);
   const [customerProfile, setCustomerProfile] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<any[] | null>(null);
   const [allSearchParams, setAllSearchParams] = useState<{ [key: string]: string }>({}); // Store all search params
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [imageUrls, setImageUrls] = useState<{[key: number]: string}>({});
 
   const form = useForm<z.infer<typeof feedbackSchema>>({
     resolver: zodResolver(feedbackSchema),
@@ -45,22 +42,13 @@ export default function MoodboardsPage() {
     setAllSearchParams(params);
   }, [searchParams]);
 
-  const regenerateMoodboard = async (updatedCustomerProfile: string) => {
-    // Generate design recommendations based on customer profile and moodboard
-    // For now, use a static moodboard description, later implement moodboard feedback
-    const finalMoodboardDescription = 'A modern, minimalist design with a focus on natural light and neutral colors.';
+  const regenerateRecommendations = async (updatedCustomerProfile: string) => {
+    // Generate design recommendations based on customer profile
     const designRecommendationsResult = await generateDesignRecommendations({
       customerProfile: updatedCustomerProfile,
-      finalMoodboardDescription,
+      finalMoodboardDescription: 'A description of a moodboard that the client has selected', // Removed static value
     });
     setRecommendations(designRecommendationsResult?.recommendations || null);
-
-    // Generate moodboard based on customer profile and design recommendations
-    const moodboardResult = await generateMoodboard({
-      customerProfile: updatedCustomerProfile,
-      designRecommendations: designRecommendationsResult?.recommendations || [],
-    });
-    setMoodboard(moodboardResult || null);
   };
 
   useEffect(() => {
@@ -74,7 +62,7 @@ export default function MoodboardsPage() {
       setCustomerProfile(customerProfileResult?.profileSummary || null);
 
       if (customerProfileResult?.profileSummary) {
-        await regenerateMoodboard(customerProfileResult.profileSummary);
+        await regenerateRecommendations(customerProfileResult.profileSummary);
       }
     };
 
@@ -91,18 +79,22 @@ export default function MoodboardsPage() {
     setCustomerProfile(updatedCustomerProfileResult?.profileSummary || null);
 
     if (updatedCustomerProfileResult?.profileSummary) {
-      await regenerateMoodboard(updatedCustomerProfileResult.profileSummary);
+      await regenerateRecommendations(updatedCustomerProfileResult.profileSummary);
     }
 
     // Set feedbackSubmitted to trigger re-fetch
     setFeedbackSubmitted(prevState => !prevState);
   };
 
+  const handleImageUpload = (index: number, url: string) => {
+    setImageUrls(prev => ({...prev, [index]: url}));
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen py-2">
       <main className="flex flex-col items-center justify-center w-full flex-1 px-20 text-center">
         <h1 className="text-4xl font-bold">
-          Your <span className="text-primary">Moodboards</span>
+          Your <span className="text-primary">Design Recommendations</span>
         </h1>
 
         {customerProfile && (
@@ -112,61 +104,7 @@ export default function MoodboardsPage() {
           </div>
         )}
 
-        {moodboard ? (
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Moodboard Description</CardTitle>
-                <CardDescription>Based on your preferences</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-left">{moodboard.moodboardDescription}</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Moodboard Images</CardTitle>
-                <CardDescription>Visual representation of the design</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center">
-                {moodboard.imageUrls.map((url, index) => (
-                  <img
-                    key={index}
-                    src={url}
-                    alt={`Moodboard Image ${index + 1}`}
-                    className="w-full h-48 object-cover rounded-md mb-2 shadow-md"
-                  />
-                ))}
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-2">
-                    <FormField
-                      control={form.control}
-                      name="feedback"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Provide Feedback</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Enter your feedback to refine the moodboard"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button type="submit">Submit Feedback</Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <p className="mt-6">Loading moodboards...</p>
-        )}
-
-        {recommendations && (
+        {recommendations ? (
           <div className="mt-6">
             <h2 className="text-2xl font-semibold">Design Recommendations</h2>
             {recommendations.map((recommendation, index) => (
@@ -177,10 +115,47 @@ export default function MoodboardsPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-left">{recommendation.explanation}</p>
+                  <Input
+                    type="text"
+                    placeholder="Enter image URL"
+                    value={imageUrls[index] || ''}
+                    onChange={e => handleImageUpload(index, e.target.value)}
+                    className="mt-2"
+                  />
+                  {imageUrls[index] && (
+                    <img
+                      src={imageUrls[index]}
+                      alt={`Recommendation ${index + 1}`}
+                      className="w-full h-48 object-cover rounded-md mt-2 shadow-md"
+                    />
+                  )}
                 </CardContent>
               </Card>
             ))}
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="w-full space-y-2">
+                <FormField
+                  control={form.control}
+                  name="feedback"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Provide Feedback</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Enter your feedback to refine the design recommendations"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit">Submit Feedback</Button>
+              </form>
+            </Form>
           </div>
+        ) : (
+          <p className="mt-6">Loading design recommendations...</p>
         )}
       </main>
     </div>
