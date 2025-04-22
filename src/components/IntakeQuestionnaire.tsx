@@ -23,6 +23,7 @@ import {format} from 'date-fns';
 import {useState} from 'react';
 import {Checkbox} from '@/components/ui/checkbox';
 import {Input} from '@/components/ui/input';
+import {Slider} from '@/components/ui/slider';
 
 const formSchema = z.object({
   projectType: z.string().min(1, {
@@ -31,27 +32,19 @@ const formSchema = z.object({
   spaces: z.array(z.string()).optional(),
   otherSpace: z.string().optional(),
   squareFootage: z.string().optional(),
-  timeline: z.date().optional(),
-  budget: z.string().optional(),
-  investmentPriorities: z.string().optional(),
+  budget: z.number().min(0).max(100000).optional(),
   loveAboutSpace: z.string().optional(),
   dislikeAboutSpace: z.string().optional(),
   whoUsesSpace: z.string().optional(),
-  primaryActivities: z.array(z.string()).optional(),
-  otherActivity: z.string().optional(),
   functionalNeeds: z.string().optional(),
   designStyles: z.array(z.string()).optional(),
   otherStyle: z.string().optional(),
   idealSpace: z.string().optional(),
   colorPalette: z.string().optional(),
   colorsToAvoid: z.string().optional(),
-  woodTypes: z.string().optional(),
-  metalFinishes: z.string().optional(),
-  fabrics: z.string().optional(),
-  otherMaterials: z.string().optional(),
+  materialsTextures: z.string().optional(),
   itemsToKeep: z.string().optional(),
   furnitureToAdd: z.string().optional(),
-  furnitureToRemove: z.string().optional(),
   architecturalFeatures: z.string().optional(),
   otherDetails: z.string().optional(),
 });
@@ -66,27 +59,19 @@ export default function IntakeQuestionnaire() {
       spaces: [],
       otherSpace: '',
       squareFootage: '',
-      timeline: undefined,
-      budget: '',
-      investmentPriorities: '',
+      budget: 50000,
       loveAboutSpace: '',
       dislikeAboutSpace: '',
       whoUsesSpace: '',
-      primaryActivities: [],
-      otherActivity: '',
       functionalNeeds: '',
       designStyles: [],
       otherStyle: '',
       idealSpace: '',
       colorPalette: '',
       colorsToAvoid: '',
-      woodTypes: '',
-      metalFinishes: '',
-      fabrics: '',
-      otherMaterials: '',
+      materialsTextures: '',
       itemsToKeep: '',
       furnitureToAdd: '',
-      furnitureToRemove: '',
       architecturalFeatures: '',
       otherDetails: '',
     },
@@ -130,7 +115,6 @@ export default function IntakeQuestionnaire() {
                   <SelectItem value="New construction">New construction</SelectItem>
                   <SelectItem value="Renovation">Renovation</SelectItem>
                   <SelectItem value="Room redesign">Room redesign</SelectItem>
-                  <SelectItem value="Room refresh (furniture, paint, etc.)">Room refresh (furniture, paint, etc.)</SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage/>
@@ -288,127 +272,17 @@ export default function IntakeQuestionnaire() {
 
         <FormField
           control={form.control}
-          name="timeline"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Timeline (desired completion date)</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={'outline'}
-                      className={cn(
-                        'w-[240px] pl-3 text-left font-normal',
-                        !date && 'text-muted-foreground'
-                      )}
-                    >
-                      {date ? (
-                        format(date, 'PPP')
-                      ) : (
-                        <span>Pick a date</span>
-                      )}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50"/>
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="center" sideOffset={3}>
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    disabled={(date) =>
-                      date < new Date()
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
           name="budget"
           render={({field}) => (
             <FormItem>
               <FormLabel>Total budget</FormLabel>
-              <div className="flex flex-col space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="under10k"
-                    checked={field.value === 'Under $10k'}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked ? 'Under $10k' : undefined);
-                    }}
-                  />
-                  <label
-                    htmlFor="under10k"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Under $10k
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="10k-30k"
-                    checked={field.value === '$10k–$30k'}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked ? '$10k–$30k' : undefined);
-                    }}
-                  />
-                  <label
-                    htmlFor="10k-30k"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    $10k–$30k
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="30k-75k"
-                    checked={field.value === '$30k–$75k'}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked ? '$30k–$75k' : undefined);
-                    }}
-                  />
-                  <label
-                    htmlFor="30k-75k"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    $30k–$75k
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="75k+"
-                    checked={field.value === '$75k+'}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked ? '$75k+' : undefined);
-                    }}
-                  />
-                  <label
-                    htmlFor="75k+"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    $75k+
-                  </label>
-                </div>
-              </div>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="investmentPriorities"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Investment priorities (where do you want to focus spending?)</FormLabel>
               <FormControl>
-                <Textarea placeholder="Enter investment priorities" {...field} />
+                <Slider
+                  defaultValue={[50000]}
+                  max={100000}
+                  step={1000}
+                  onValueChange={(value) => field.onChange(value[0])}
+                />
               </FormControl>
               <FormMessage/>
             </FormItem>
@@ -420,9 +294,9 @@ export default function IntakeQuestionnaire() {
           name="loveAboutSpace"
           render={({field}) => (
             <FormItem>
-              <FormLabel>What do you love about your current space?</FormLabel>
+              <FormLabel>What do you like about your current space?</FormLabel>
               <FormControl>
-                <Textarea placeholder="Describe what you love" {...field} />
+                <Textarea placeholder="Describe what you like" {...field} />
               </FormControl>
               <FormMessage/>
             </FormItem>
@@ -459,106 +333,10 @@ export default function IntakeQuestionnaire() {
 
         <FormField
           control={form.control}
-          name="primaryActivities"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Primary activities in this space</FormLabel>
-              <div className="flex flex-col space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="entertaining"
-                    checked={field.value?.includes('Entertaining')}
-                    onCheckedChange={(checked) => {
-                      field.onChange(
-                        checked
-                          ? [...(field.value || []), 'Entertaining']
-                          : field.value?.filter((v) => v !== 'Entertaining')
-                      );
-                    }}
-                  />
-                  <label
-                    htmlFor="entertaining"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Entertaining
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="relaxation"
-                    checked={field.value?.includes('Relaxation')}
-                    onCheckedChange={(checked) => {
-                      field.onChange(
-                        checked
-                          ? [...(field.value || []), 'Relaxation']
-                          : field.value?.filter((v) => v !== 'Relaxation')
-                      );
-                    }}
-                  />
-                  <label
-                    htmlFor="relaxation"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Relaxation
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="working"
-                    checked={field.value?.includes('Working')}
-                    onCheckedChange={(checked) => {
-                      field.onChange(
-                        checked
-                          ? [...(field.value || []), 'Working']
-                          : field.value?.filter((v) => v !== 'Working')
-                      );
-                    }}
-                  />
-                  <label
-                    htmlFor="working"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Working
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="cookingDining"
-                    checked={field.value?.includes('Cooking/Dining')}
-                    onCheckedChange={(checked) => {
-                      field.onChange(
-                        checked
-                          ? [...(field.value || []), 'Cooking/Dining']
-                          : field.value?.filter((v) => v !== 'Cooking/Dining')
-                      );
-                    }}
-                  />
-                  <label
-                    htmlFor="cookingDining"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Cooking/Dining
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Input
-                    id="otherActivity"
-                    placeholder="Other activity"
-                    {...field}
-                  />
-                </div>
-              </div>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
           name="functionalNeeds"
           render={({field}) => (
             <FormItem>
-              <FormLabel>Specific functional needs (storage, lighting, etc.)</FormLabel>
+              <FormLabel>Specific functional needs (relaxing, studying, working, etc.)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Enter functional needs" {...field} />
               </FormControl>
@@ -591,7 +369,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="modern"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Modern
+                    Modern: Characterized by clean lines, minimalism, and a neutral color palette.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -611,7 +389,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="minimalist"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Minimalist
+                    Minimalist: Emphasizes simplicity, clean lines, and a monochromatic palette.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -631,7 +409,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="traditional"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Traditional
+                    Traditional: Features rich colors, ornate details, and classic furniture arrangements.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -651,7 +429,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="midCentury"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Mid-century
+                    Mid-century: Combines clean lines, organic shapes, and a mix of materials like wood, metal, and vinyl.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -671,7 +449,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="industrial"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Industrial
+                    Industrial: Celebrates raw and exposed materials like brick, concrete, and metal.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -691,7 +469,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="bohemian"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Bohemian
+                    Bohemian: Features eclectic mixes of colors, patterns, and textures, often inspired by global cultures.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -711,7 +489,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="farmhouse"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Farmhouse
+                    Farmhouse: Combines rustic elements with comfortable, practical designs.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -731,7 +509,7 @@ export default function IntakeQuestionnaire() {
                     htmlFor="scandinavian"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Scandinavian
+                    Scandinavian: Focuses on simplicity, functionality, and natural light, often with a minimalist aesthetic.
                   </label>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -791,54 +569,12 @@ export default function IntakeQuestionnaire() {
 
         <FormField
           control={form.control}
-          name="woodTypes"
+          name="materialsTextures"
           render={({field}) => (
             <FormItem>
-              <FormLabel>Wood types</FormLabel>
+              <FormLabel>Preferred materials/textures</FormLabel>
               <FormControl>
-                <Input placeholder="Enter wood types" {...field} />
-              </FormControl>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="metalFinishes"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Metal finishes</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter metal finishes" {...field} />
-              </FormControl>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="fabrics"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Fabrics</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter fabrics" {...field} />
-              </FormControl>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="otherMaterials"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Other materials/textures</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter other materials" {...field} />
+                <Input placeholder="Enter materials/textures" {...field} />
               </FormControl>
               <FormMessage/>
             </FormItem>
@@ -867,20 +603,6 @@ export default function IntakeQuestionnaire() {
               <FormLabel>Specific furniture pieces you want to add</FormLabel>
               <FormControl>
                 <Textarea placeholder="Enter furniture to add" {...field} />
-              </FormControl>
-              <FormMessage/>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="furnitureToRemove"
-          render={({field}) => (
-            <FormItem>
-              <FormLabel>Specific furniture pieces you want to remove</FormLabel>
-              <FormControl>
-                <Textarea placeholder="Enter furniture to remove" {...field} />
               </FormControl>
               <FormMessage/>
             </FormItem>
