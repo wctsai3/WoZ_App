@@ -32,7 +32,7 @@ const formSchema = z.object({
   spaces: z.array(z.string()).optional(),
   otherSpace: z.string().optional(),
   squareFootage: z.string().optional(),
-  budget: z.number().min(0).max(100000).optional(),
+  budget: z.string().optional(),
   loveAboutSpace: z.string().optional(),
   dislikeAboutSpace: z.string().optional(),
   whoUsesSpace: z.string().optional(),
@@ -59,7 +59,7 @@ export default function IntakeQuestionnaire() {
       spaces: [],
       otherSpace: '',
       squareFootage: '',
-      budget: 50000,
+      budget: '',
       loveAboutSpace: '',
       dislikeAboutSpace: '',
       whoUsesSpace: '',
@@ -277,12 +277,7 @@ export default function IntakeQuestionnaire() {
             <FormItem>
               <FormLabel>Total budget</FormLabel>
               <FormControl>
-                <Slider
-                  defaultValue={[50000]}
-                  max={100000}
-                  step={1000}
-                  onValueChange={(value) => field.onChange(value[0])}
-                />
+                <Input placeholder="Enter total budget" {...field} />
               </FormControl>
               <FormMessage/>
             </FormItem>
@@ -642,3 +637,4 @@ export default function IntakeQuestionnaire() {
     </Form>
   );
 }
+
