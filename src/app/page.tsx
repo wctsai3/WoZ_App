@@ -1,5 +1,5 @@
-
 import IntakeQuestionnaire from '@/components/IntakeQuestionnaire';
+import Link from 'next/link';
 
 export default function Home() {
   return (
@@ -15,6 +15,12 @@ export default function Home() {
 
         <div className="mt-6">
           <IntakeQuestionnaire />
+        </div>
+        
+        <div className="mt-6 text-sm text-muted-foreground">
+          <Link href="/wizard-entrance" className="hover:underline">
+            Wizard Dashboard Access
+          </Link>
         </div>
       </main>
     </div>
