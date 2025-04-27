@@ -1,5 +1,3 @@
-'use server';
-
 /**
  * @fileOverview Generates a customer profile based on questionnaire responses.
  *
@@ -62,13 +60,14 @@ const customerProfileFlow = ai.defineFlow<
       const {output} = await prompt({input: JSON.stringify(input, null, 2)});
       return output!;
     } catch (error: any) {
-      if (error.message.includes('429 Too Many Requests')) {
+      if (error.message && error.message.includes('429 Too Many Requests')) {
         retryCount++;
         console.warn(`Rate limit hit. Retrying in ${delay / 1000} seconds... (Attempt ${retryCount}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
       } else {
         // If it's not a rate limit error, re-throw it
+        console.error('Error generating customer profile:', error);
         throw error;
       }
     }

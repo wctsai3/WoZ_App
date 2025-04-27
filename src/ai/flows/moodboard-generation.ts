@@ -1,4 +1,3 @@
-'use server';
 /**
  * @fileOverview Moodboard generation flow.
  *
