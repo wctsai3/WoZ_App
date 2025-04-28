@@ -1,7 +1,5 @@
 'use client';
 
-import { generateCustomerProfile } from '@/ai/flows/customer-profile-generation';
-import { generateDesignRecommendations } from '@/ai/flows/design-recommendation-output';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +14,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
 import { useStateContext } from '@/lib/state-context';
 import Link from 'next/link';
+
+// Import types only for TypeScript
+import type { CustomerProfileInput, CustomerProfileOutput } from '@/ai/flows/customer-profile-generation';
+import type { DesignRecommendationInput, DesignRecommendationOutput } from '@/ai/flows/design-recommendation-output';
 
 const feedbackSchema = z.object({
   feedback: z.string().min(10, {
@@ -78,6 +80,10 @@ export default function MoodboardsPage() {
       }
 
       try {
+        // Dynamically import the AI modules only when needed
+        const { generateCustomerProfile } = await import('@/ai/flows/customer-profile-generation');
+        const { generateDesignRecommendations } = await import('@/ai/flows/design-recommendation-output');
+        
         // Generate customer profile with Gemini
         const customerProfileResult = await generateCustomerProfile({
           ...params,

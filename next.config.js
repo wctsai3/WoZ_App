@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',
+  basePath: '/WoZ_App',
   images: { unoptimized: true },
   typescript: {
     // !! WARN !!
@@ -12,17 +14,15 @@ const nextConfig = {
     // Only run ESLint on build in production. Linting is also run by the editor.
     ignoreDuringBuilds: true,
   },
-  webpack: (config) => {
-    // This is to handle Node.js modules that Genkit depends on
+  webpack: (config, { isServer }) => {
+    // Add fallbacks for Node.js core modules
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       net: false,
       tls: false,
-      path: false,
-      os: false,
-      crypto: false,
     };
+    
     return config;
   },
 };
