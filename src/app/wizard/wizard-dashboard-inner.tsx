@@ -33,6 +33,29 @@ const recommendationImageSchema = z.object({
   imageUrl: z.string().url({ message: 'Please enter a valid image URL' }),
 });
 
+
+// Function to get active sessions from localStorage
+const getActiveSessions = () => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stateString = localStorage.getItem('woz_session_state');
+      if (!stateString) return [];
+      const state = JSON.parse(stateString);
+      if (state.customerProfile) {
+        return [{
+          id: state.id,
+          customerProfile: state.customerProfile,
+          timestamp: Date.now(),
+        }];
+      }
+      return [];
+    } catch (error) {
+      console.error('Error parsing sessions from localStorage', error);
+      return [];
+    }
+  };
+  
+
 export default function WizardDashboardInner() {
     const { sessionState, addFeedback, addMoodboard, updateRecommendationImage } = useStateContext();
     const searchParams = useSearchParams();
