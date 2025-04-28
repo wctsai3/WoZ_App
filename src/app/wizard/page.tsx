@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,23 +33,39 @@ const recommendationImageSchema = z.object({
   imageUrl: z.string().url({ message: 'Please enter a valid image URL' }),
 });
 
+// Function to get active sessions from localStorage
+const getActiveSessions = () => {
+  if (typeof window === 'undefined') return [];
+  
+  try {
+    const stateString = localStorage.getItem('woz_session_state');
+    if (!stateString) return [];
+    
+    const state = JSON.parse(stateString);
+    if (state.customerProfile) {
+      // Return as array with single session for consistency
+      return [{
+        id: state.id,
+        customerProfile: state.customerProfile,
+        timestamp: Date.now() 
+      }];
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error parsing sessions from localStorage', error);
+    return [];
+  }
+};
+
 export default function WizardDashboard() {
-  const { sessionState, addFeedback, addMoodboard, updateRecommendationImage, loadSession } = useStateContext();
+  const { sessionState, addFeedback, addMoodboard, updateRecommendationImage } = useStateContext();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('conversation');
   const [editingRecommendationId, setEditingRecommendationId] = useState<string | null>(null);
-
-  // Load the session from the URL if specified
-  useEffect(() => {
-    const sessionId = searchParams.get('session');
-    if (sessionId) {
-      loadSession(sessionId);
-    } else {
-      // If no session ID is provided, redirect to the wizard entrance
-      router.push('/wizard-entrance');
-    }
-  }, [searchParams, loadSession, router]);
+  const [activeSessions, setActiveSessions] = useState<{id: string, customerProfile: string, timestamp: number}[]>([]);
+  const [sessionSelected, setSessionSelected] = useState(false);
 
   const feedbackForm = useForm<z.infer<typeof feedbackSchema>>({
     resolver: zodResolver(feedbackSchema),
@@ -77,15 +93,81 @@ export default function WizardDashboard() {
     },
   });
 
+  // Create a ref for scrolling
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [sessionState.feedback]);
+
+  // Poll for changes from user
+  useEffect(() => {
+    // Function to check for localStorage changes to detect user feedback
+    const checkForUserUpdates = () => {
+      try {
+        const savedState = localStorage.getItem('woz_session_state');
+        if (savedState) {
+          // Parse to compare with current state
+          const parsedState = JSON.parse(savedState);
+          
+          // Count user messages in current state
+          const currentUserMsgCount = sessionState.feedback.filter(f => f.fromUser).length;
+          // Count user messages in saved state
+          const savedUserMsgCount = parsedState.feedback.filter((f: any) => f.fromUser).length;
+          
+          // If we detect more user messages in storage, reload to get latest
+          if (savedUserMsgCount > currentUserMsgCount) {
+            window.location.reload();
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for user updates', error);
+      }
+    };
+    
+    // Poll every 5 seconds for user feedback
+    const interval = setInterval(checkForUserUpdates, 5000);
+    
+    return () => clearInterval(interval);
+  }, [sessionState]);
+
+  // Check for active sessions regularly
+  useEffect(() => {
+    const checkSessions = () => {
+      const sessions = getActiveSessions();
+      setActiveSessions(sessions);
+    };
+    
+    // Check immediately
+    checkSessions();
+    
+    // Then set interval to check every 5 seconds
+    const interval = setInterval(checkSessions, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Check if session is in URL
+  useEffect(() => {
+    const session = searchParams.get('session');
+    if (session) {
+      setSessionSelected(true);
+    }
+  }, [searchParams]);
+
   // Check if we have a valid session
   useEffect(() => {
-    if (!sessionState.customerProfile) {
+    if (sessionSelected && !sessionState.customerProfile) {
       toast({
-        title: 'Loading session',
-        description: 'Waiting for session data to load...',
+        title: 'No active session',
+        description: 'Please ensure the user has completed the questionnaire first.',
+        variant: 'destructive',
       });
     }
-  }, [sessionState.customerProfile]);
+  }, [sessionState.customerProfile, sessionSelected]);
 
   const submitFeedback = async (values: z.infer<typeof feedbackSchema>) => {
     try {
@@ -161,38 +243,91 @@ export default function WizardDashboard() {
 
   const { customerProfile, recommendations, feedback, moodboards } = sessionState;
 
+  // If we haven't selected a session yet, show the session list
+  if (!sessionSelected) {
+    return (
+      <div className="container mx-auto py-6">
+        <h1 className="text-3xl font-bold mb-6">Design Wizard Dashboard</h1>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Sessions</CardTitle>
+            <CardDescription>
+              {activeSessions.length > 0 
+                ? "Select a session to manage" 
+                : "Waiting for a user to complete the questionnaire"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {activeSessions.length > 0 ? (
+              <div className="space-y-4">
+                {activeSessions.map(session => (
+                  <Card key={session.id} className="overflow-hidden">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Active Design Session</CardTitle>
+                      <CardDescription>
+                        Created {new Date(session.timestamp).toLocaleString()}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pb-2">
+                      <ScrollArea className="h-40 pr-4 rounded-md border p-2">
+                        <p className="text-sm">{session.customerProfile.substring(0, 300)}...</p>
+                      </ScrollArea>
+                    </CardContent>
+                    <CardFooter>
+                      <Button 
+                        className="w-full"
+                        onClick={() => {
+                          router.push(`/wizard?session=${session.id}`);
+                          setSessionSelected(true);
+                        }}
+                      >
+                        Manage Session
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">
+                  No active sessions. Waiting for a user to complete the questionnaire.
+                </p>
+                <p className="text-muted-foreground mt-2">
+                  This page will automatically refresh when a new session is available.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // If session selected but no customer profile, show loading
   if (!customerProfile) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen py-2">
         <Card className="w-[400px]">
           <CardHeader>
-            <CardTitle>Loading Session</CardTitle>
-            <CardDescription>Waiting for session data...</CardDescription>
+            <CardTitle>No Active Session</CardTitle>
+            <CardDescription>Please ensure the user has completed the questionnaire.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-8 bg-gray-200 rounded animate-pulse mb-4"></div>
-            <div className="h-8 bg-gray-200 rounded animate-pulse"></div>
-          </CardContent>
           <CardFooter>
-            <Button onClick={() => router.push('/wizard-entrance')} variant="outline" className="w-full">
-              Return to Wizard Entrance
-            </Button>
+            <Button onClick={() => router.push('/wizard')} className="w-full">Return to Dashboard</Button>
           </CardFooter>
         </Card>
       </div>
     );
   }
 
+  // Session selected and active, show dashboard
   return (
     <div className="container mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Design Wizard Dashboard</h1>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={() => router.push('/wizard-entrance')}
-        >
-          Back to All Sessions
+        <Button variant="outline" onClick={() => router.push('/wizard')}>
+          Return to Sessions List
         </Button>
       </div>
       
@@ -249,6 +384,7 @@ export default function WizardDashboard() {
                     <p className="text-center text-muted-foreground">No conversation yet. The customer will send feedback soon.</p>
                   )}
                 </div>
+                <div ref={chatEndRef} />
               </ScrollArea>
             </CardContent>
             <CardFooter>
@@ -485,10 +621,7 @@ export default function WizardDashboard() {
       </Tabs>
 
       <div className="fixed bottom-4 right-4">
-        <Button 
-          onClick={() => window.open(`/moodboards?session=${sessionState.id}`, '_blank')} 
-          variant="secondary"
-        >
+        <Button onClick={() => window.open('/moodboards', '_blank')} variant="secondary">
           Open User View
         </Button>
       </div>

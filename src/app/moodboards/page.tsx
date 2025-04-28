@@ -1,7 +1,9 @@
 'use client';
 
+import { generateCustomerProfile } from '@/ai/flows/customer-profile-generation';
+import { generateDesignRecommendations } from '@/ai/flows/design-recommendation-output';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,10 +17,6 @@ import { toast } from '@/components/ui/use-toast';
 import { useStateContext } from '@/lib/state-context';
 import Link from 'next/link';
 
-// Import types only for TypeScript
-import type { CustomerProfileInput, CustomerProfileOutput } from '@/ai/flows/customer-profile-generation';
-import type { DesignRecommendationInput, DesignRecommendationOutput } from '@/ai/flows/design-recommendation-output';
-
 const feedbackSchema = z.object({
   feedback: z.string().min(10, {
     message: 'Feedback must be at least 10 characters.',
@@ -30,14 +28,14 @@ export default function MoodboardsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [showWizardPrompt, setShowWizardPrompt] = useState(true);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const { 
     sessionState, 
     setCustomerProfile, 
     addFeedback, 
     addRecommendation,
-    getSessionId,
-    loadSession
+    getSessionId
   } = useStateContext();
 
   const form = useForm<z.infer<typeof feedbackSchema>>({
@@ -47,17 +45,72 @@ export default function MoodboardsPage() {
     },
   });
 
+  // Get destructured values from session state
+  const { 
+    recommendations, 
+    moodboards, 
+    customerProfile, 
+    feedback 
+  } = sessionState;
+
+  // Add a poller for real-time updates
+  useEffect(() => {
+    // Function to check for localStorage changes
+    const checkForUpdates = () => {
+      try {
+        const savedState = localStorage.getItem('woz_session_state');
+        if (savedState) {
+          // Parse to compare with current state
+          const parsedState = JSON.parse(savedState);
+          
+          // Simple way to detect updates - compare lengths
+          const currentFeedbackCount = sessionState.feedback.length;
+          const savedFeedbackCount = parsedState.feedback.length;
+          
+          const currentMoodboardCount = sessionState.moodboards.length;
+          const savedMoodboardCount = parsedState.moodboards.length;
+          
+          const currentRecsWithImages = sessionState.recommendations.filter(r => r.imageUrl).length;
+          const savedRecsWithImages = parsedState.recommendations.filter((r: any) => r.imageUrl).length;
+          
+          // If we detect more items in storage than in our state, force a window reload
+          // This happens when the wizard adds content in another window/tab
+          if (savedFeedbackCount > currentFeedbackCount || 
+              savedMoodboardCount > currentMoodboardCount || 
+              savedRecsWithImages > currentRecsWithImages) {
+            // Reload the page to get fresh state from localStorage
+            window.location.reload();
+          }
+        }
+      } catch (error) {
+        console.error('Error checking for updates', error);
+      }
+    };
+    
+    // Poll every 5 seconds for changes
+    const interval = setInterval(checkForUpdates, 5000);
+    
+    return () => clearInterval(interval);
+  }, [sessionState]);
+
+  // Update the prompt display logic
+  // Hide the wizard prompt after first displaying it
+  useEffect(() => {
+    // If we have feedback, don't show the wizard prompt again
+    if (feedback && feedback.length > 0) {
+      setShowWizardPrompt(false);
+    }
+  }, [feedback]);
+
+  // Auto-scroll to bottom of chat whenever feedback changes
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [feedback]);
+
   useEffect(() => {
     const initSession = async () => {
-      // Check if we have a session ID in the URL
-      const sessionId = searchParams.get('session');
-      if (sessionId) {
-        // Try to load the existing session
-        loadSession(sessionId);
-        setLoading(false);
-        return;
-      }
-
       // If we already have a customer profile, don't regenerate
       if (sessionState.customerProfile) {
         setLoading(false);
@@ -68,9 +121,7 @@ export default function MoodboardsPage() {
 
       const params: { [key: string]: string } = {};
       searchParams.forEach((value, key) => {
-        if (key !== 'session') {
-          params[key] = value;
-        }
+        params[key] = value;
       });
       
       // If no search params, redirect to home
@@ -80,10 +131,6 @@ export default function MoodboardsPage() {
       }
 
       try {
-        // Dynamically import the AI modules only when needed
-        const { generateCustomerProfile } = await import('@/ai/flows/customer-profile-generation');
-        const { generateDesignRecommendations } = await import('@/ai/flows/design-recommendation-output');
-        
         // Generate customer profile with Gemini
         const customerProfileResult = await generateCustomerProfile({
           ...params,
@@ -124,7 +171,7 @@ export default function MoodboardsPage() {
     };
 
     initSession();
-  }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, loadSession]);
+  }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation]);
 
   const onSubmit = async (values: z.infer<typeof feedbackSchema>) => {
     try {
@@ -148,13 +195,6 @@ export default function MoodboardsPage() {
       });
     }
   };
-
-  const { 
-    recommendations, 
-    moodboards, 
-    customerProfile, 
-    feedback 
-  } = sessionState;
 
   if (loading) {
     return (
@@ -183,7 +223,7 @@ export default function MoodboardsPage() {
         {showWizardPrompt && (
           <div className="mt-4 p-4 bg-yellow-50 rounded-md border border-yellow-200 w-full max-w-4xl">
             <p className="text-sm text-yellow-800">
-              For the wizard: <Link href={`/wizard?session=${getSessionId()}`} className="underline font-medium">Click here</Link> to open the wizard view or use the <Link href="/wizard-entrance" className="underline font-medium">Wizard Dashboard</Link>
+              For the wizard: <Link href={`/wizard?session=${getSessionId()}`} className="underline font-medium">Click here</Link> to open the wizard view
             </p>
             <Button 
               variant="ghost" 
@@ -348,6 +388,7 @@ export default function MoodboardsPage() {
                       </p>
                     </div>
                   ))}
+                  <div ref={chatEndRef} />
                 </div>
               </CardContent>
             </Card>

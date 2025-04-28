@@ -1,3 +1,6 @@
+// The use server directive must appear at the top of the file.
+'use server';
+
 /**
  * @fileOverview This file defines a Genkit flow for generating design recommendations based on a customer profile and moodboard.
  *
@@ -72,19 +75,6 @@ const generateDesignRecommendationsFlow = ai.defineFlow<
   inputSchema: DesignRecommendationInputSchema,
   outputSchema: DesignRecommendationOutputSchema,
 }, async input => {
-  try {
-    const {output} = await prompt(input);
-    return output!;
-  } catch (error) {
-    console.error('Error generating design recommendations:', error);
-    // Return a fallback with a message about the error
-    return {
-      recommendations: [
-        {
-          item: "Error generating recommendations",
-          explanation: "There was an error connecting to the AI service. Please try again later."
-        }
-      ]
-    };
-  }
+  const {output} = await prompt(input);
+  return output!;
 });

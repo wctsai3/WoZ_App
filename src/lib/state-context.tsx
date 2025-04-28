@@ -30,7 +30,6 @@ type SessionState = {
   recommendations: Recommendation[];
   feedback: Feedback[];
   moodboards: Moodboard[];
-  lastUpdated: number;
 };
 
 type StateContextType = {
@@ -41,7 +40,6 @@ type StateContextType = {
   addRecommendation: (recommendation: Omit<Recommendation, 'id'>) => void;
   updateRecommendationImage: (recommendationId: string, imageUrl: string) => void;
   getSessionId: () => string;
-  loadSession: (sessionId: string) => void;
 };
 
 // Generate a simple unique ID
@@ -50,110 +48,39 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
 // Create a session ID for this session
 const SESSION_ID = generateId();
 
-const createDefaultState = (id: string): SessionState => ({
-  id,
+const defaultSessionState: SessionState = {
+  id: SESSION_ID,
   customerProfile: null,
   recommendations: [],
   feedback: [],
   moodboards: [],
-  lastUpdated: Date.now(),
-});
-
-const defaultSessionState: SessionState = createDefaultState(SESSION_ID);
-
-const STATE_STORAGE_PREFIX = 'woz_session_state';
+};
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
 export function StateProvider({ children }: { children: React.ReactNode }) {
   const [sessionState, setSessionState] = useState<SessionState>(defaultSessionState);
-  const [currentSessionId, setCurrentSessionId] = useState<string>(SESSION_ID);
 
-  // Create a key for session storage
-  const getStorageKey = (id: string) => `${STATE_STORAGE_PREFIX}_${id}`;
-
-  // Load session on first load or when the session ID changes
+  // On first load, check if there's saved state in localStorage
   useEffect(() => {
-    const loadSessionFromStorage = (id: string) => {
-      const storageKey = getStorageKey(id);
-      const savedState = localStorage.getItem(storageKey);
-      
-      if (savedState) {
-        try {
-          setSessionState(JSON.parse(savedState));
-        } catch (e) {
-          console.error('Failed to parse saved state', e);
-          setSessionState(createDefaultState(id));
-        }
-      } else {
-        // If no session exists, create a new default state with this ID
-        setSessionState(createDefaultState(id));
+    const savedState = localStorage.getItem('woz_session_state');
+    if (savedState) {
+      try {
+        setSessionState(JSON.parse(savedState));
+      } catch (e) {
+        console.error('Failed to parse saved state', e);
       }
-    };
-    
-    loadSessionFromStorage(currentSessionId);
-    
-    // Set up storage event listener to detect changes from other tabs
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === getStorageKey(currentSessionId) && event.newValue) {
-        try {
-          const newState = JSON.parse(event.newValue);
-          // Only update if the data is newer
-          if (newState.lastUpdated > sessionState.lastUpdated) {
-            setSessionState(newState);
-          }
-        } catch (error) {
-          console.error('Error parsing storage change:', error);
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Setup polling to check for updates regularly
-    const pollInterval = setInterval(() => {
-      const storageKey = getStorageKey(currentSessionId);
-      const currentData = localStorage.getItem(storageKey);
-      
-      if (currentData) {
-        try {
-          const parsedData = JSON.parse(currentData);
-          // Only update if the data is newer
-          if (parsedData.lastUpdated > sessionState.lastUpdated) {
-            setSessionState(parsedData);
-          }
-        } catch (error) {
-          console.error('Error polling for updates:', error);
-        }
-      }
-    }, 1000); // Poll every second
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(pollInterval);
-    };
-  }, [currentSessionId, sessionState.lastUpdated]);
+    }
+  }, []);
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
-    if (sessionState.id) {
-      const storageKey = getStorageKey(sessionState.id);
-      localStorage.setItem(storageKey, JSON.stringify(sessionState));
-    }
+    localStorage.setItem('woz_session_state', JSON.stringify(sessionState));
   }, [sessionState]);
 
-  const updateSessionState = (
-    updater: (prevState: SessionState) => Partial<SessionState>
-  ) => {
-    setSessionState(prevState => ({
-      ...prevState,
-      ...updater(prevState),
-      lastUpdated: Date.now(),
-    }));
-  };
-
   const setCustomerProfile = (profile: string) => {
-    updateSessionState(() => ({
+    setSessionState(prev => ({
+      ...prev,
       customerProfile: profile,
     }));
   };
@@ -166,8 +93,9 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       timestamp: Date.now(),
     };
 
-    updateSessionState(prevState => ({
-      feedback: [...prevState.feedback, newFeedback],
+    setSessionState(prev => ({
+      ...prev,
+      feedback: [...prev.feedback, newFeedback],
     }));
   };
 
@@ -177,8 +105,9 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       id: generateId(),
     };
 
-    updateSessionState(prevState => ({
-      moodboards: [...prevState.moodboards, newMoodboard],
+    setSessionState(prev => ({
+      ...prev,
+      moodboards: [...prev.moodboards, newMoodboard],
     }));
   };
 
@@ -188,14 +117,16 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       id: generateId(),
     };
 
-    updateSessionState(prevState => ({
-      recommendations: [...prevState.recommendations, newRecommendation],
+    setSessionState(prev => ({
+      ...prev,
+      recommendations: [...prev.recommendations, newRecommendation],
     }));
   };
 
   const updateRecommendationImage = (recommendationId: string, imageUrl: string) => {
-    updateSessionState(prevState => ({
-      recommendations: prevState.recommendations.map(rec => 
+    setSessionState(prev => ({
+      ...prev,
+      recommendations: prev.recommendations.map(rec => 
         rec.id === recommendationId 
           ? { ...rec, imageUrl } 
           : rec
@@ -204,11 +135,6 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getSessionId = () => sessionState.id;
-
-  // Function to load a specific session by ID
-  const loadSession = (sessionId: string) => {
-    setCurrentSessionId(sessionId);
-  };
 
   return (
     <StateContext.Provider
@@ -220,7 +146,6 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
         addRecommendation,
         updateRecommendationImage,
         getSessionId,
-        loadSession,
       }}
     >
       {children}
