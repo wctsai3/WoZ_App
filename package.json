@@ -40,7 +40,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
-    "genkit": "^5.0.0",
+    "genkit": "^0.3.2",
     "lucide-react": "^0.344.0",
     "nanoid": "^5.0.6",
     "next": "^14.2.0",
