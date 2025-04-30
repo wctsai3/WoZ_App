@@ -116,7 +116,7 @@ export default function WizardDashboardInner() {
     return () => clearInterval(interval); // Cleanup interval on unmount
   }, []);
 
-
+  
   // Load specific session data when URL parameter 'session' changes
   useEffect(() => {
     const sessionId = searchParams.get('session');
@@ -128,66 +128,246 @@ export default function WizardDashboardInner() {
 
       const fetchSessionData = async () => {
         try {
-          const response = await fetch(`/api/sessions/${sessionId}`);
+          console.log(`Fetching session data for ID: ${sessionId}`);
+          
+          // Add timestamp to prevent caching issues
+          const timestamp = Date.now();
+          const response = await fetch(`/api/sessions/${sessionId}?_t=${timestamp}`);
 
+          // Check for errors in the response
           if (!response.ok) {
-            console.error(`Failed to fetch session ${sessionId}: ${response.status}`);
+            const errorText = await response.text();
+            console.error(`Failed to fetch session ${sessionId}: ${response.status}`, errorText);
             setSessionError(true);
-            if (typeof loadSessionById === 'function') {
-                // Optionally clear state if session load fails
-                // loadSessionById(null); // Or use a specific clear function
-            }
+            
+            // Display appropriate error message
             toast({
               title: 'Error Loading Session',
-              description: `Could not load session ${sessionId}. Status: ${response.status}`,
+              description: `Could not load session ${sessionId}. Status: ${response.status}. ${
+                response.status === 404 ? 'Session may have been deleted.' : 'Server error occurred.'
+              }`,
               variant: 'destructive',
             });
-          } else {
-            const sessionData = await response.json();
-            // IMPORTANT: Call the context function to update the shared state
-            if (typeof loadSessionById === 'function') {
-                 loadSessionById(sessionData);
-            } else {
-                 console.error("StateContext is missing the function to load session data!");
-                 setSessionError(true); // Treat as error if context cannot be updated
-                 toast({
-                    title: 'Application Error',
-                    description: 'Could not process session data.',
-                    variant: 'destructive',
-                  });
-            }
+            
+            setIsLoadingSession(false);
+            return;
           }
+
+          // Parse the response
+          let sessionData;
+          try {
+            sessionData = await response.json();
+            console.log('Session data loaded:', sessionData);
+          } catch (parseError) {
+            console.error(`Error parsing session data for ${sessionId}:`, parseError);
+            setSessionError(true);
+            toast({
+              title: 'Data Error',
+              description: 'Could not parse session data. The data may be corrupted.',
+              variant: 'destructive',
+            });
+            setIsLoadingSession(false);
+            return;
+          }
+
+          // Validate session data - add explicit initialization for missing fields
+          if (!sessionData) {
+            sessionData = { id: sessionId };
+          }
+          
+          // Ensure all arrays exist to prevent rendering errors
+          if (!Array.isArray(sessionData.recommendations)) {
+            sessionData.recommendations = [];
+          }
+          
+          if (!Array.isArray(sessionData.feedback)) {
+            sessionData.feedback = [];
+          }
+          
+          if (!Array.isArray(sessionData.moodboards)) {
+            sessionData.moodboards = [];
+          }
+          
+          // Ensure the ID exists
+          if (!sessionData.id) {
+            sessionData.id = sessionId;
+          }
+
+          console.log(`Successfully loaded session ${sessionId}`);
+          
+          // Update the context with the fetched data
+          if (typeof loadSessionById === 'function') {
+            loadSessionById(sessionData);
+          } else {
+            console.error("StateContext is missing the loadSessionById function!");
+            setSessionError(true);
+            toast({
+              title: 'Application Error',
+              description: 'Could not process session data due to a missing function.',
+              variant: 'destructive',
+            });
+            setIsLoadingSession(false);
+            return;
+          }
+          
+          setIsLoadingSession(false);
         } catch (error) {
-          console.error(`Error fetching session ${sessionId}:`, error);
+          console.error(`Network error fetching session ${sessionId}:`, error);
           setSessionError(true);
-           if (typeof loadSessionById === 'function') {
-              // Optionally clear state on fetch error
-              // loadSessionById(null);
-           }
           toast({
             title: 'Network Error',
-            description: `Failed to connect to load session ${sessionId}.`,
+            description: `Failed to connect to server to load session ${sessionId}.`,
             variant: 'destructive',
           });
-        } finally {
           setIsLoadingSession(false);
         }
       };
 
+      // Add a timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => {
+        if (isLoadingSession) {
+          console.warn(`Session loading timed out for session ${sessionId}`);
+          setIsLoadingSession(false);
+          setSessionError(true);
+          toast({
+            title: 'Loading Timeout',
+            description: 'Session data loading took too long. Please try again.',
+            variant: 'destructive',
+          });
+        }
+      }, 15000); // 15-second timeout
+
       fetchSessionData();
 
+      // Clear timeout if component unmounts or dependencies change
+      return () => clearTimeout(timeoutId);
     } else {
       // Reset state if no session ID in URL
       setSessionSelected(false);
       setSessionError(false);
-       if (typeof loadSessionById === 'function') {
-         // Optionally clear state when navigating away from a specific session
-         // loadSessionById(null);
-       }
     }
-    // Add loadSessionById (or the actual function name) to dependency array
-  }, [searchParams, loadSessionById]);
+  }, [searchParams, loadSessionById, toast, isLoadingSession]);
 
+
+  // Update the polling mechanism in wizard-dashboard-inner.tsx
+
+  // Poller for real-time updates from the server
+  useEffect(() => {
+    const sessionId = searchParams.get('session');
+    
+    // Don't start polling if no session ID or if still loading the initial data
+    if (!sessionId || isLoadingSession) {
+      return;
+    }
+
+    console.log(`Starting polling for session ${sessionId}`);
+    
+    let failedAttempts = 0;
+    const MAX_FAILED_ATTEMPTS = 5;
+    
+    const pollSession = async () => {
+      try {
+        // Add timestamp to prevent caching issues
+        const timestamp = Date.now();
+        const res = await fetch(`/api/sessions/${sessionId}?_t=${timestamp}`);
+
+        if (!res.ok) {
+          failedAttempts++;
+          console.warn(`Polling error (attempt ${failedAttempts}/${MAX_FAILED_ATTEMPTS}): Status ${res.status}`);
+          
+          // Stop polling after too many failed attempts
+          if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+            console.error(`Stopping polling after ${MAX_FAILED_ATTEMPTS} failed attempts`);
+            clearInterval(intervalId);
+            
+            // Only show toast on first failure that reaches the threshold
+            if (failedAttempts === MAX_FAILED_ATTEMPTS) {
+              toast({
+                title: 'Connection Issues',
+                description: 'Having trouble connecting to the server. Updates may be delayed.',
+                variant: 'destructive',
+              });
+            }
+          }
+          return;
+        }
+
+        // Reset failure counter on success
+        failedAttempts = 0;
+
+        const latestSessionData = await res.json();
+
+        if (!latestSessionData?.id) {
+          console.warn(`Polling: Invalid data received for session ${sessionId}`);
+          return;
+        }
+
+        // Compare with current state to check for updates
+        const current = sessionState;
+        const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
+        const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
+        const hasNewRecommendations = (latestSessionData.recommendations?.length || 0) > (current.recommendations?.length || 0);
+        const hasUpdatedImages = false;
+        
+        // Check for updated recommendation images
+        if (latestSessionData.recommendations && current.recommendations) {
+          for (const newRec of latestSessionData.recommendations) {
+            const matchingRec = current.recommendations.find(r => r.id === newRec.id);
+            if (matchingRec && newRec.imageUrl && newRec.imageUrl !== matchingRec.imageUrl) {
+              hasUpdatedImages = true;
+              break;
+            }
+          }
+        }
+
+        // Update state if changes detected
+        if (hasNewFeedback || hasNewMoodboard || hasNewRecommendations || hasUpdatedImages) {
+          console.log(`Polling: Detected updates for session ${sessionId}`);
+          
+          // Ensure necessary arrays exist before updating state
+          if (!Array.isArray(latestSessionData.recommendations)) {
+            latestSessionData.recommendations = [];
+          }
+          
+          if (!Array.isArray(latestSessionData.feedback)) {
+            latestSessionData.feedback = [];
+          }
+          
+          if (!Array.isArray(latestSessionData.moodboards)) {
+            latestSessionData.moodboards = [];
+          }
+          
+          // Update state using loadSessionById function
+          if (typeof loadSessionById === 'function') {
+            loadSessionById(latestSessionData);
+          } else {
+            console.error("Context is missing 'loadSessionById' function");
+          }
+        }
+      } catch (e) {
+        failedAttempts++;
+        console.error(`Polling error (attempt ${failedAttempts}/${MAX_FAILED_ATTEMPTS}):`, e);
+        
+        // Stop polling after too many failed attempts
+        if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+          console.error(`Stopping polling after ${MAX_FAILED_ATTEMPTS} failed attempts`);
+          clearInterval(intervalId);
+        }
+      }
+    };
+
+    // Execute immediately on mount
+    pollSession();
+    
+    // Then set up interval
+    const intervalId = setInterval(pollSession, 5000); // Poll every 5 seconds
+    
+    // Cleanup interval on unmount or when dependencies change
+    return () => {
+      console.log(`Stopping polling for session ${sessionId}`);
+      clearInterval(intervalId);
+    };
+  }, [searchParams, loadSessionById, sessionState, isLoadingSession, toast]);
 
   // Handlers for forms
   const submitFeedback = async (values: z.infer<typeof feedbackSchema>) => {
@@ -295,11 +475,11 @@ export default function WizardDashboardInner() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="pb-2">
-                       <ScrollArea className="h-40 pr-4 rounded-md border p-2">
-                         <p className="text-sm">
-                           {session.customerProfile ? session.customerProfile.substring(0, 300) + '...' : 'No profile summary available.'}
-                         </p>
-                       </ScrollArea>
+                      <ScrollArea className="h-40 pr-4 rounded-md border p-2">
+                        <p className="text-sm">
+                          {session.customerProfile ? session.customerProfile.substring(0, 300) + '...' : 'No profile summary available.'}
+                        </p>
+                      </ScrollArea>
                     </CardContent>
                     <CardFooter>
                       <Button
@@ -321,9 +501,9 @@ export default function WizardDashboardInner() {
                 <p className="text-muted-foreground">
                   No active sessions found.
                 </p>
-                 <p className="text-muted-foreground mt-2">
-                   This page will automatically refresh.
-                 </p>
+                <p className="text-muted-foreground mt-2">
+                  This page will automatically refresh.
+                </p>
               </div>
             )}
           </CardContent>
@@ -335,15 +515,29 @@ export default function WizardDashboardInner() {
   // Case 2: Session selected via URL, but currently loading data
   if (isLoadingSession) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <p>Loading session data...</p>
-        {/* Consider adding a spinner component here */}
+      <div className="flex flex-col items-center justify-center min-h-screen py-6">
+        <Card className="w-[400px]">
+          <CardHeader>
+            <CardTitle>Loading Session</CardTitle>
+            <CardDescription>
+              Retrieving session data...
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-6">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+          </CardContent>
+          <CardFooter className="flex justify-center">
+            <Button variant="outline" onClick={() => router.push('/wizard')}>
+              Return to Sessions List
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     );
   }
 
-  // Case 3: Session selected, but loading failed OR loaded data is invalid (missing customerProfile)
-  if (sessionError || !customerProfile) {
+  // Case 3: Session selected, but loading failed OR loaded data is invalid
+  if (sessionError || !sessionState.id) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen py-2">
         <Card className="w-[400px]">
@@ -364,6 +558,12 @@ export default function WizardDashboardInner() {
   }
 
   // Case 4: Session selected, loading complete, data is valid -> Show Full Dashboard
+  // Safely access session data, providing fallbacks for missing values
+  const customerProfile = sessionState.customerProfile || 'No customer profile available.';
+  const recommendations = Array.isArray(sessionState.recommendations) ? sessionState.recommendations : [];
+  const feedback = Array.isArray(sessionState.feedback) ? sessionState.feedback : [];
+  const moodboards = Array.isArray(sessionState.moodboards) ? sessionState.moodboards : [];
+
   return (
       <div className="container mx-auto py-6">
         <div className="flex justify-between items-center mb-6">
@@ -458,7 +658,7 @@ export default function WizardDashboardInner() {
 
           <TabsContent value="design" className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-               {/* Moodboard Creation Form */}
+              {/* Moodboard Creation Form */}
               <div className="md:col-span-6">
                 <Card>
                   <CardHeader>
@@ -483,7 +683,7 @@ export default function WizardDashboardInner() {
                 </Card>
               </div>
 
-               {/* Recommendations Image Adder */}
+              {/* Recommendations Image Adder */}
               <div className="md:col-span-6">
                 <Card>
                   <CardHeader>
@@ -542,7 +742,7 @@ export default function WizardDashboardInner() {
                     {editingRecommendationId && (
                       <div className="mt-4 p-4 border rounded-md">
                         <h3 className="text-sm font-medium mb-2">
-                          Add/Change Image for {recommendations.find(r => r.id === editingRecommendationId)?.item}
+                          Add/Change Image for {recommendations.find(r => r.id === editingRecommendationId)?.item || 'Recommendation'}
                         </h3>
                         <Form {...imageForm}>
                           <form onSubmit={imageForm.handleSubmit(submitRecommendationImage)} className="space-y-2">
@@ -585,9 +785,9 @@ export default function WizardDashboardInner() {
 
         {/* Button to open user view (optional) */}
         <div className="fixed bottom-4 right-4">
-           <Button onClick={() => window.open('/moodboards', '_blank')} variant="secondary">
-             Open User View
-           </Button>
+          <Button onClick={() => window.open(`/moodboards?session=${sessionState.id}`, '_blank')} variant="secondary">
+            Open User View
+          </Button>
         </div>
       </div>
   );
