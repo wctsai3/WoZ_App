@@ -36,20 +36,19 @@ const recommendationImageSchema = z.object({
 export default function WizardDashboardInner() {
   const {
     sessionState,
-    loadSessionById: loadSessionFn, // rename to emphasise raw ctx fn may be unstable
+    loadSessionById: loadSessionFn,
     addFeedback,
     addMoodboard,
     updateRecommendationImage,
   } = useStateContext();
 
-  // keep a stable ref to the loader so it never changes effect deps
+  // keep a stable ref so effects don't retrigger
   const loadSessionById = useRef(loadSessionFn);
   loadSessionById.current = loadSessionFn;
 
   const searchParams = useSearchParams();
   const router = useRouter();
-
-  const sessionId = searchParams.get('session'); // primitive for deps
+  const sessionId = searchParams.get('session');
 
   // ---------------- UI STATE ----------------
   const [activeTab, setActiveTab] = useState<'customer' | 'conversation' | 'design'>('conversation');
@@ -82,13 +81,13 @@ export default function WizardDashboardInner() {
     defaultValues: { imageUrl: '' },
   });
 
-  // chat auto‑scroll
+  // chat auto‑scroll ----------------------------------------------------
   const chatEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sessionState.feedback]);
 
-  // -------- 1️⃣ Active‑session list --------
+  // -------- 1️⃣ Active‑session list ------------------------------------
   useEffect(() => {
     const fetchSessions = async () => {
       try {
@@ -111,7 +110,7 @@ export default function WizardDashboardInner() {
     return () => clearInterval(id);
   }, []);
 
-  // -------- 2️⃣ Load session once ---------
+  // -------- 2️⃣ Load session once --------------------------------------
   useEffect(() => {
     if (!sessionId) {
       setSessionSelected(false);
@@ -149,9 +148,9 @@ export default function WizardDashboardInner() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]); // 🚨 removed loadSessionById from deps
+  }, [sessionId]);
 
-  // -------- 3️⃣ Poll every 10s --------
+  // -------- 3️⃣ Poll every 10s -----------------------------------------
   useEffect(() => {
     if (!sessionId || isLoadingSession) return;
 
@@ -179,16 +178,16 @@ export default function WizardDashboardInner() {
         }
         fails = 0;
       } catch (e) {
-        if (++fails >= MAX_FAILS) clearInterval(intervalId);
+        if (++fails >= MAX_FAILS) clearInterval(id);
       }
     };
 
     poll();
-    const intervalId = setInterval(poll, 10000);
-    return () => clearInterval(intervalId);
-  }, [sessionId, isLoadingSession, sessionState]); // removed load fn
+    const id = setInterval(poll, 10000);
+    return () => clearInterval(id);
+  }, [sessionId, isLoadingSession, sessionState]);
 
-  // ---------------- submit handlers ----------------
+  // ---------------- submit handlers ------------------------------------
   const submitFeedback = (v: z.infer<typeof feedbackSchema>) => {
     try {
       addFeedback(v.content, false);
@@ -222,12 +221,110 @@ export default function WizardDashboardInner() {
     }
   };
 
-  // safe derived values
+  // ---------------- safe derived values --------------------------------
   const { customerProfile, recommendations, feedback, moodboards } = sessionState;
   const safeCustomerProfile = customerProfile || 'No customer profile available.';
   const safeRecommendations = Array.isArray(recommendations) ? recommendations : [];
   const safeFeedback = Array.isArray(feedback) ? feedback : [];
   const safeMoodboards = Array.isArray(moodboards) ? moodboards : [];
+
+
+  // ─── DESIGN TAB ─────────────────────────────────────
+  const DesignTab = () => (
+    <TabsContent value="design" className="mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        {/* Moodboard Creation Form */}
+        {/* … unchanged … */}
+
+        {/* Recommendations Image Adder */}
+        <div className="md:col-span-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recommendations</CardTitle>
+              <CardDescription>Add images to generated recommendations</CardDescription>
+            </CardHeader>
+
+            {/* ⭐ Ensure CardContent gets **one** direct child ⭐ */}
+            <CardContent>
+              <div className="flex flex-col space-y-4">
+                <ScrollArea className="h-[50vh] pr-4">
+                  <div className="space-y-4">
+                    {safeRecommendations.length > 0 ? (
+                      safeRecommendations.map(rec => (
+                        <Card key={rec.id} className="overflow-hidden">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-lg">{rec.item}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="pb-2">
+                            <p className="text-sm mb-3">{rec.explanation}</p>
+                            {rec.imageUrl ? (
+                              <div>
+                                <img src={rec.imageUrl} alt={rec.item} className="w-full h-36 object-cover rounded-md" />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-2 w-full"
+                                  onClick={() => {
+                                    setEditingRecommendationId(rec.id);
+                                    imageForm.setValue('imageUrl', rec.imageUrl || '');
+                                  }}
+                                >
+                                  Change Image
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => setEditingRecommendationId(rec.id)}
+                              >
+                                Add Image
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <p className="text-center text-muted-foreground">No recommendations available yet.</p>
+                    )}
+                  </div>
+                </ScrollArea>
+
+                {/* conditional editor */}
+                {editingRecommendationId && (
+                  <div className="p-4 border rounded-md">
+                    <h3 className="text-sm font-medium mb-2">
+                      Add/Change Image for {safeRecommendations.find(r => r.id === editingRecommendationId)?.item || 'Recommendation'}
+                    </h3>
+                    <Form {...imageForm}>
+                      <form onSubmit={imageForm.handleSubmit(submitRecommendationImage)} className="space-y-2">
+                        <FormField
+                          control={imageForm.control}
+                          name="imageUrl"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input placeholder="Enter image URL..." {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div className="flex gap-2">
+                          <Button type="submit" size="sm">Save</Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => { setEditingRecommendationId(null); imageForm.reset(); }}>Cancel</Button>
+                        </div>
+                      </form>
+                    </Form>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </TabsContent>
+  );
 
 
   // --- Conditional Rendering Logic ---
@@ -433,131 +530,7 @@ export default function WizardDashboardInner() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="design" className="mt-6">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-              {/* Moodboard Creation Form */}
-              <div className="md:col-span-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Create Moodboard</CardTitle>
-                    <CardDescription>Add a new moodboard for the customer</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Form {...moodboardForm}>
-                      <form onSubmit={moodboardForm.handleSubmit(submitMoodboard)} className="space-y-4">
-                        <FormField control={moodboardForm.control} name="title" render={({ field }) => ( <FormItem> <FormLabel>Moodboard Title</FormLabel> <FormControl> <Input placeholder="Enter a title..." {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                        <FormField control={moodboardForm.control} name="description" render={({ field }) => ( <FormItem> <FormLabel>Description</FormLabel> <FormControl> <Textarea placeholder="Describe this moodboard..." className="min-h-[80px]" {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                        <div className="grid grid-cols-1 gap-4">
-                          <FormField control={moodboardForm.control} name="image1" render={({ field }) => ( <FormItem> <FormLabel>Image 1 URL (required)</FormLabel> <FormControl> <Input placeholder="https://..." {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                          <FormField control={moodboardForm.control} name="image2" render={({ field }) => ( <FormItem> <FormLabel>Image 2 URL (optional)</FormLabel> <FormControl> <Input placeholder="https://..." {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                          <FormField control={moodboardForm.control} name="image3" render={({ field }) => ( <FormItem> <FormLabel>Image 3 URL (optional)</FormLabel> <FormControl> <Input placeholder="https://..." {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                          <FormField control={moodboardForm.control} name="image4" render={({ field }) => ( <FormItem> <FormLabel>Image 4 URL (optional)</FormLabel> <FormControl> <Input placeholder="https://..." {...field} /> </FormControl> <FormMessage /> </FormItem> )} />
-                        </div>
-                        <Button type="submit" className="w-full">Create Moodboard</Button>
-                      </form>
-                    </Form>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Recommendations Image Adder */}
-              <div className="md:col-span-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recommendations</CardTitle>
-                    <CardDescription>Add images to generated recommendations</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="h-[50vh] pr-4">
-                      <div className="space-y-4">
-                        {safeRecommendations.length > 0 ? (
-                          safeRecommendations.map((recommendation) => (
-                            <Card key={recommendation.id} className="overflow-hidden">
-                              <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">{recommendation.item}</CardTitle>
-                              </CardHeader>
-                              <CardContent className="pb-2">
-                                <p className="text-sm mb-3">{recommendation.explanation}</p>
-                                {recommendation.imageUrl ? (
-                                  <div>
-                                    <img
-                                      src={recommendation.imageUrl}
-                                      alt={recommendation.item}
-                                      className="w-full h-36 object-cover rounded-md"
-                                    />
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="mt-2 w-full"
-                                      onClick={() => {
-                                        setEditingRecommendationId(recommendation.id);
-                                        imageForm.setValue('imageUrl', recommendation.imageUrl || '');
-                                      }}
-                                    >
-                                      Change Image
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    variant="outline"
-                                    className="w-full"
-                                    onClick={() => setEditingRecommendationId(recommendation.id)}
-                                  >
-                                    Add Image
-                                  </Button>
-                                )}
-                              </CardContent>
-                            </Card>
-                          ))
-                        ) : (
-                          <p className="text-center text-muted-foreground">No recommendations available yet.</p>
-                        )}
-                      </div>
-                    </ScrollArea>
-
-                    {/* Image adding/editing form */}
-                    {editingRecommendationId && (
-                      <div className="mt-4 p-4 border rounded-md">
-                        <h3 className="text-sm font-medium mb-2">
-                          Add/Change Image for {safeRecommendations.find(r => r.id === editingRecommendationId)?.item || 'Recommendation'}
-                        </h3>
-                        <Form {...imageForm}>
-                          <form onSubmit={imageForm.handleSubmit(submitRecommendationImage)} className="space-y-2">
-                            <FormField
-                              control={imageForm.control}
-                              name="imageUrl"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input placeholder="Enter image URL..." {...field} />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <div className="flex gap-2">
-                              <Button type="submit" size="sm">Save</Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setEditingRecommendationId(null);
-                                  imageForm.reset();
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </form>
-                        </Form>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </TabsContent>
+          <DesignTab />
         </Tabs>
 
         {/* Button to open user view(optional) */}
