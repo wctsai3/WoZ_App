@@ -56,66 +56,6 @@ export default function MoodboardsInnerPage() {
         feedback
     } = sessionState;
 
-    // Poller for real-time updates from the wizard/backend
-    useEffect(() => {
-      const pollSession = async () => {
-        const sessionId = searchParams.get('session');
-        if (!sessionId) {
-          // No session ID in URL, stop polling for this page instance
-          console.log("Polling stopped: No session ID in URL.");
-          return;
-        }
-    
-        try {
-          // *** CORRECTION: Use the correct API endpoint for fetching a single session ***
-          const res = await fetch(`/api/sessions/${sessionId}`);
-    
-          if (!res.ok) {
-            // Handle errors gracefully
-            if (res.status === 404) {
-              console.warn(`Polling: Session ${sessionId} not found.`);
-            } else {
-              console.error(`Polling Error: Failed to fetch session ${sessionId}. Status: ${res.status}`);
-            }
-            return; // Stop processing if fetch failed
-          }
-    
-          const latestSessionData = await res.json();
-    
-          if (!latestSessionData?.id) {
-            console.warn(`Polling: Invalid data received for session ${sessionId}.`, latestSessionData);
-            return; // Stop if data is invalid
-          }
-    
-          // Basic comparison to check for updates (can be improved)
-          const current = sessionState;
-          const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
-          const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
-          const hasNewImages = (latestSessionData.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
-                               > (current.recommendations?.filter((r: any) => r.imageUrl)?.length || 0);
-    
-          if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
-            console.log(`Polling: Detected updates for session ${sessionId}. Updating state.`);
-            // *** CORRECTION: Update state using loadSessionById function instead ***
-            if (typeof loadSessionById === 'function') {
-              loadSessionById(latestSessionData);
-            } else {
-              console.error("Polling Error: Context is missing 'loadSessionById' function. Reloading as fallback.");
-              // Fallback (less ideal)
-              window.location.reload();
-            }
-          }
-        } catch (e) {
-          console.error('Polling Error: Exception during fetch/processing.', e);
-        }
-      };
-    
-      const interval = setInterval(pollSession, 5000); // Poll every 5 seconds
-      return () => clearInterval(interval); // Cleanup interval on unmount
-    
-    }, [searchParams, loadSessionById, sessionState]);
-
-
     // Hide the wizard prompt after first displaying it or if feedback exists
     useEffect(() => {
         if (feedback && feedback.length > 0) {
@@ -132,99 +72,194 @@ export default function MoodboardsInnerPage() {
 
     // Initialize session: Generate profile and recommendations if not already present
     useEffect(() => {
-        const initSession = async () => {
-             // Use sessionId from URL as the source of truth for initialization check
-             const sessionIdFromUrl = searchParams.get('session');
-
-             if (!sessionIdFromUrl) {
-                console.log("initSession: No session ID in URL. Redirecting.");
-                 router.push('/'); // Redirect if no session specified
-                 return;
-             }
-
-             // If we already have a customer profile loaded for this session ID
-             // (assuming getSessionId() correctly reflects the loaded session), don't regenerate.
-             if (sessionState.customerProfile && getSessionId() === sessionIdFromUrl) {
-                console.log(`initSession: Profile already exists for session ${sessionIdFromUrl}. Skipping generation.`);
-                setLoading(false);
-                return;
-             }
-
-            setLoading(true);
-
-            const params: { [key: string]: string } = {};
-            searchParams.forEach((value, key) => {
-                if (key !== 'session') { // Don't include session ID itself in AI params
-                     params[key] = value;
-                }
-            });
-
-            // Ensure we have questionnaire params before calling AI
-            if (Object.keys(params).length === 0) {
-                console.log("initSession: No questionnaire parameters found. Cannot generate profile.");
-                // Maybe redirect or show an error? For now, just stop loading.
-                setLoading(false);
-                // Consider showing a message that questionnaire data is missing
-                 toast({
-                   title: 'Missing Information',
-                   description: 'Could not find questionnaire answers in the URL to initialize the session.',
-                   variant: 'destructive',
-                 });
-                return;
-            }
-
-            try {
-                console.log(`initSession: Generating profile for session ${sessionIdFromUrl}...`);
-                const customerProfileResult = await generateCustomerProfile({ ...params } as any);
-
-                if (!customerProfileResult?.profileSummary) {
+      const initSession = async () => {
+        // Get sessionId from URL
+        const sessionIdFromUrl = searchParams.get('session');
+    
+        if (!sessionIdFromUrl) {
+          console.log("initSession: No session ID in URL. Redirecting.");
+          router.push('/'); // Redirect if no session specified
+          return;
+        }
+    
+        // If we already have a customer profile loaded for this session ID
+        // (assuming getSessionId() correctly reflects the loaded session), don't regenerate.
+        if (sessionState.customerProfile && getSessionId() === sessionIdFromUrl) {
+          console.log(`initSession: Profile already exists for session ${sessionIdFromUrl}. Skipping generation.`);
+          setLoading(false);
+          return;
+        }
+    
+        setLoading(true);
+    
+        try {
+          // First try to fetch the complete session data from server
+          const sessionResponse = await fetch(`/api/sessions/${sessionIdFromUrl}`);
+          
+          if (sessionResponse.ok) {
+            const sessionData = await sessionResponse.json();
+            
+            // Check if session has questionnaire data
+            if (sessionData.questionnaire) {
+              console.log(`initSession: Found questionnaire data for session ${sessionIdFromUrl}. Using this to generate profile.`);
+              
+              // Use questionnaire data stored in the session
+              const params = sessionData.questionnaire;
+              
+              // Generate customer profile
+              const customerProfileResult = await generateCustomerProfile(params);
+              
+              if (!customerProfileResult?.profileSummary) {
                 throw new Error('Failed to generate customer profile');
-                }
-                console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
-
-                // IMPORTANT: Ensure setCustomerProfile also sets the correct sessionId in the context
-                setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl); // Assuming setCustomerProfile takes ID
-
-                const designRecommendationsResult = await generateDesignRecommendations({
-                    customerProfile: customerProfileResult.profileSummary,
-                    finalMoodboardDescription: 'Initial moodboard based on customer profile',
+              }
+              
+              console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
+              
+              // Set customer profile
+              setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
+              
+              // Generate design recommendations
+              const designRecommendationsResult = await generateDesignRecommendations({
+                customerProfile: customerProfileResult.profileSummary,
+                finalMoodboardDescription: 'Initial moodboard based on customer profile',
+              });
+              
+              if (designRecommendationsResult?.recommendations) {
+                designRecommendationsResult.recommendations.forEach((rec) => {
+                  addRecommendation({
+                    item: rec.item,
+                    explanation: rec.explanation
+                  });
                 });
-
-                if (designRecommendationsResult?.recommendations) {
-                    console.log(`initSession: Adding ${designRecommendationsResult.recommendations.length} recommendations.`);
-                    designRecommendationsResult.recommendations.forEach((rec: any) => {
-                        addRecommendation({
-                            item: rec.item,
-                            explanation: rec.explanation
-                        }); // Assuming addRecommendation links to the current session in context
-                    });
-                } else {
-                     console.log("initSession: No initial recommendations generated.");
-                }
-
-                 // Optionally trigger a save to backend here if state isn't automatically persisted
-                 // await fetch(`/api/sessions/${sessionIdFromUrl}`, { method: 'PUT', body: JSON.stringify(updatedSessionState) });
-
-
-            } catch (error) {
-                console.error('Error initializing session:', error);
-                toast({
-                title: 'Initialization Error',
-                description: 'Failed to initialize your design session. Please check inputs or try again.',
-                variant: 'destructive',
-                });
-                // Maybe redirect back to home or questionnaire on failure
-                 router.push('/');
-            } finally {
-                setLoading(false);
+              }
+              
+              setLoading(false);
+              return;
             }
-        };
+          }
+          
+          // If we couldn't get questionnaire data from the session, try URL parameters
+          const params: { [key: string]: string } = {};
+          searchParams.forEach((value, key) => {
+            if (key !== 'session') { // Don't include session ID itself in AI params
+              params[key] = value;
+            }
+          });
+    
+          // Ensure we have questionnaire params before calling AI
+          if (Object.keys(params).length === 0) {
+            console.log("initSession: No questionnaire parameters found. Cannot generate profile.");
+            setLoading(false);
+            toast({
+              title: 'Missing Information',
+              description: 'Could not find questionnaire answers in the URL to initialize the session.',
+              variant: 'destructive',
+            });
+            return;
+          }
+    
+          console.log(`initSession: Generating profile for session ${sessionIdFromUrl}...`);
+          const customerProfileResult = await generateCustomerProfile({ ...params } as any);
+    
+          if (!customerProfileResult?.profileSummary) {
+            throw new Error('Failed to generate customer profile');
+          }
+          
+          console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
+    
+          // Set customer profile
+          setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
+    
+          const designRecommendationsResult = await generateDesignRecommendations({
+            customerProfile: customerProfileResult.profileSummary,
+            finalMoodboardDescription: 'Initial moodboard based on customer profile',
+          });
+    
+          if (designRecommendationsResult?.recommendations) {
+            console.log(`initSession: Adding ${designRecommendationsResult.recommendations.length} recommendations.`);
+            designRecommendationsResult.recommendations.forEach((rec: any) => {
+              addRecommendation({
+                item: rec.item,
+                explanation: rec.explanation
+              });
+            });
+          }
+    
+        } catch (error) {
+          console.error('Error initializing session:', error);
+          toast({
+            title: 'Initialization Error',
+            description: 'Failed to initialize your design session. Please check inputs or try again.',
+            variant: 'destructive',
+          });
+          router.push('/');
+        } finally {
+          setLoading(false);
+        }
+      };
+    
+      initSession();
+    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, getSessionId, loadSessionById]);
+    
+    
+    // Update the polling useEffect
+    useEffect(() => {
+      const pollSession = async () => {
+        const sessionId = searchParams.get('session');
+        if (!sessionId) {
+          // No session ID in URL, stop polling for this page instance
+          console.log("Polling stopped: No session ID in URL.");
+          return;
+        }
 
-        initSession();
-        // Dependencies: searchParams triggers re-init if URL changes.
-        // sessionState.customerProfile prevents re-running if profile already loaded.
-        // Context functions are dependencies if they change. getSessionId needed for check.
-    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, getSessionId]);
+        try {
+          const res = await fetch(`/api/sessions/${sessionId}`);
+
+          if (!res.ok) {
+            // Handle errors gracefully
+            if (res.status === 404) {
+              console.warn(`Polling: Session ${sessionId} not found.`);
+            } else {
+              console.error(`Polling Error: Failed to fetch session ${sessionId}. Status: ${res.status}`);
+            }
+            return; // Stop processing if fetch failed
+          }
+
+          const latestSessionData = await res.json();
+
+          if (!latestSessionData?.id) {
+            console.warn(`Polling: Invalid data received for session ${sessionId}.`, latestSessionData);
+            return; // Stop if data is invalid
+          }
+
+          // Basic comparison to check for updates
+          const current = sessionState;
+          const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
+          const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
+          const hasNewImages = (latestSessionData.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
+                              > (current.recommendations?.filter((r: any) => r.imageUrl)?.length || 0);
+
+          if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
+            console.log(`Polling: Detected updates for session ${sessionId}. Updating state.`);
+            // Update state using loadSessionById function
+            if (typeof loadSessionById === 'function') {
+              loadSessionById(latestSessionData);
+            } else {
+              console.error("Polling Error: Context is missing 'loadSessionById' function. Reloading as fallback.");
+              // Fallback (less ideal)
+              window.location.reload();
+            }
+          }
+        } catch (e) {
+          console.error('Polling Error: Exception during fetch/processing.', e);
+        }
+      };
+
+      const interval = setInterval(pollSession, 5000); // Poll every 5 seconds
+      return () => clearInterval(interval); // Cleanup interval on unmount
+
+    }, [searchParams, loadSessionById, sessionState]);
+
 
     // Handler for submitting feedback
     const onSubmit = async (values: z.infer<typeof feedbackSchema>) => {

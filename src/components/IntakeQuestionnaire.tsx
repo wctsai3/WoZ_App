@@ -80,28 +80,27 @@ export default function IntakeQuestionnaire() {
       otherDetails: '',
     },
   });
-  
+
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
     console.log('Form submitted:', values);
 
     try {
-      // --- Call backend API to CREATE session ---
+      // Create session with POST request including questionnaire data
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ questionnaire: values }), // Send questionnaire data
+        body: JSON.stringify({ questionnaire: values }), // Send complete questionnaire data
       });
 
       if (!response.ok) {
-        // Handle API errors
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
-      // --- Get new session data (with ID) from response ---
+      // Get new session data (with ID) from response
       const newSessionData = await response.json();
 
       if (!newSessionData || !newSessionData.id) {
@@ -110,11 +109,26 @@ export default function IntakeQuestionnaire() {
 
       console.log('New session created:', newSessionData);
 
-      // --- Update the global state context ---
+      // Update global state
       setSessionState(newSessionData);
 
-      // --- Redirect to the moodboards page with the new session ID ---
-      router.push(`/moodboards?session=${newSessionData.id}`);
+      // Pass questionnaire data as URL parameters to ensure availability
+      const queryParams = new URLSearchParams();
+      queryParams.append('session', newSessionData.id);
+      
+      // Include important questionnaire data as URL parameters
+      Object.entries(values).forEach(([key, value]) => {
+        if (value && (typeof value === 'string' || Array.isArray(value))) {
+          if (Array.isArray(value)) {
+            value.forEach(v => queryParams.append(key, v));
+          } else {
+            queryParams.append(key, value);
+          }
+        }
+      });
+
+      // Redirect to moodboards page with all parameters
+      router.push(`/moodboards?${queryParams.toString()}`);
 
       toast({
         title: 'Questionnaire Submitted!',

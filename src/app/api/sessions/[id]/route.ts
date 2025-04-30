@@ -3,7 +3,7 @@ import redis from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
-// Get a specific session by ID
+// Get a specific session by ID - accessible to everyone
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-// Define Types (keep these as they are)
+// Define Types
 type Feedback = {
   id: string;
   content: string;
@@ -31,6 +31,7 @@ type SessionState = {
   recommendations: Recommendation[];
   feedback: Feedback[];
   moodboards: Moodboard[];
+  questionnaire?: any; // Add questionnaire data to store
 };
 
 // Define Context Type
@@ -46,10 +47,10 @@ type StateContextType = {
   loadSessionById: (sessionData: SessionState) => void; // Added this function
 };
 
-// Utility function (keep as is)
+// Utility function
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// --- FIXED: Correct Default State ---
+// Default State
 const defaultSessionState: SessionState = {
   id: '', // Initialize with empty string
   customerProfile: null,
@@ -61,7 +62,7 @@ const defaultSessionState: SessionState = {
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
 export function StateProvider({ children }: { children: React.ReactNode }) {
-  // Initialize state with the corrected default
+  // Initialize state with the default
   const [sessionState, _setSessionState] = useState<SessionState>(defaultSessionState);
 
   // Function to update the entire state
@@ -75,7 +76,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
     }
   };
   
-  // Added function to load session by ID
+  // Function to load session by ID
   const loadSessionById = (sessionData: SessionState) => {
     console.log("Loading session data:", sessionData);
     _setSessionState(sessionData);
@@ -262,7 +263,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
         addRecommendation,
         updateRecommendationImage,
         getSessionId,
-        loadSessionById, // Added this function to the context
+        loadSessionById,
       }}
     >
       {children}
@@ -270,7 +271,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Hook to use the context (keep as is)
+// Hook to use the context
 export function useStateContext() {
   const context = useContext(StateContext);
   if (context === undefined) {

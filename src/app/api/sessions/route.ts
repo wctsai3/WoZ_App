@@ -4,7 +4,6 @@ import { nanoid } from 'nanoid'; // Or use crypto.randomUUID
 
 export const dynamic = 'force-dynamic';
 
-// Only create a new session if POST request has a body with questionnaire data
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -43,6 +42,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// GET handler to retrieve all sessions - accessible to everyone
 export async function GET() {
     try {
       const keys = await redis.keys('session:*');
