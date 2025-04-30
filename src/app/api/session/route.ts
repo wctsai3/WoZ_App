@@ -1,27 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import redis from '@/lib/redis';
 
-const SESSION_PREFIX = 'session:';
+export async function POST(req: NextRequest) {
+  try {
+    const session = await req.json();
 
-export async function GET(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get('id');
+    if (!session || !session.id) {
+      return NextResponse.json({ error: 'Session must include an ID' }, { status: 400 });
+    }
 
-  if (id) {
-    const session = await redis.get(`${SESSION_PREFIX}${id}`);
-    return NextResponse.json(session || {});
+    await redis.set(`session:${session.id}`, JSON.stringify(session));
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Error saving session to Redis:', err);
+    return NextResponse.json({ error: 'Failed to save session' }, { status: 500 });
   }
-
-  const keys = await redis.keys(`${SESSION_PREFIX}*`);
-  const sessions = await Promise.all(keys.map(key => redis.get(key)));
-  return NextResponse.json(sessions.filter(Boolean));
 }
 
-export async function POST(req: NextRequest) {
-  const session = await req.json();
-  if (!session?.id) {
-    return NextResponse.json({ error: 'Missing session id' }, { status: 400 });
-  }
+export async function GET() {
+    try {
+      const keys = await redis.keys('session:*');
+      if (!keys || keys.length === 0) {
+        return NextResponse.json([]);
+      }
 
-  await redis.set(`${SESSION_PREFIX}${session.id}`, session);
-  return NextResponse.json({ success: true });
+      
+      const sessions = await redis.mget(...keys);
+      const parsed = sessions
+        .map((s) => {
+          try {
+            return typeof s === 'string' ? JSON.parse(s) : s;
+          } catch {
+            return null;
+          }
+        })
+        .filter((s) => s && s.id);
+  
+      return NextResponse.json(parsed);
+    } catch (err) {
+      console.error('Error fetching sessions:', err);
+      return NextResponse.json({ error: 'Failed to load sessions' }, { status: 500 });
+    }
 }

@@ -80,13 +80,12 @@ export default function WizardDashboardInner() {
       }
     }, [sessionState.feedback]);
   
-    // Poll for changes from user
+  
     useEffect(() => {
-      const pollSession = async () => {
+      const fetchSessions = async () => {
         try {
-          const res = await fetch('/api/session');
+          const res = await fetch('/api/sessions');
           const data = await res.json();
-
           if (Array.isArray(data)) {
             setActiveSessions(
               data.map((s: any) => ({
@@ -96,50 +95,16 @@ export default function WizardDashboardInner() {
               }))
             );
           }
-    
-          const currentCount = sessionState.feedback.filter(f => f.fromUser).length;
-          const latestCount = data?.feedback?.filter((f: any) => f.fromUser).length || 0;
-    
-          if (latestCount > currentCount) {
-            window.location.reload(); // 或 setSessionState(data) 替換整個 state
-          }
-        } catch (e) {
-          console.error('Failed to poll feedback updates from Redis', e);
+        } catch (err) {
+          console.error('Failed to fetch sessions', err);
         }
       };
     
-      const interval = setInterval(pollSession, 5000);
-      return () => clearInterval(interval);
-    }, [sessionState.feedback]);
-    
-  
-    // Check for active sessions regularly
-    useEffect(() => {
-      const checkSessions = async () => {
-        try {
-          const res = await fetch('/api/session');
-          const data = await res.json();
-    
-          if (data && data.customerProfile) {
-            setActiveSessions([{
-              id: data.id,
-              customerProfile: data.customerProfile,
-              timestamp: Date.now(),
-            }]);
-          } else {
-            setActiveSessions([]);
-          }
-        } catch (error) {
-          console.error('Failed to fetch session from Redis', error);
-          setActiveSessions([]);
-        }
-      };
-    
-      checkSessions();
-    
-      const interval = setInterval(checkSessions, 5000);
+      fetchSessions();
+      const interval = setInterval(fetchSessions, 5000);
       return () => clearInterval(interval);
     }, []);
+    
     
   
     // Check if session is in URL
@@ -263,7 +228,10 @@ export default function WizardDashboardInner() {
                       </CardHeader>
                       <CardContent className="pb-2">
                         <ScrollArea className="h-40 pr-4 rounded-md border p-2">
-                          <p className="text-sm">{session.customerProfile.substring(0, 300)}...</p>
+                          <p className="text-sm">
+                            {session.customerProfile ? session.customerProfile.substring(0, 300) + '...' : 'No profile available.'}
+                          </p>
+
                         </ScrollArea>
                       </CardContent>
                       <CardFooter>
