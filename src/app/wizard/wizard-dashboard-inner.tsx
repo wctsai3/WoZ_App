@@ -36,22 +36,35 @@ const recommendationImageSchema = z.object({
 export default function WizardDashboardInner() {
   // IMPORTANT: Replace 'loadSessionById' with the actual function from your StateContext
   // that loads/updates the session state based on fetched data.
-  const { sessionState, loadSessionById, addFeedback, addMoodboard, updateRecommendationImage } = useStateContext();
+  const {
+    sessionState,
+    loadSessionById,
+    addFeedback,
+    addMoodboard,
+    updateRecommendationImage,
+  } = useStateContext();
+
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('conversation');
-  const [editingRecommendationId, setEditingRecommendationId] = useState<string | null>(null);
-  const [activeSessions, setActiveSessions] = useState<{id: string, customerProfile: string, timestamp: number}[]>([]);
-  const [sessionSelected, setSessionSelected] = useState(false);
-  const [isLoadingSession, setIsLoadingSession] = useState(false); // Added for loading state
-  const [sessionError, setSessionError] = useState(false); // Added for error tracking
 
+
+  /** Primitive value used as dependency instead of the unstable searchParams object */
+  const sessionId = searchParams.get('session');
+
+  // UI state -------------------------------------------------
+  const [activeTab, setActiveTab] = useState<'customer' | 'conversation' | 'design'>('conversation');
+  const [editingRecommendationId, setEditingRecommendationId] = useState<string | null>(null);
+  const [activeSessions, setActiveSessions] = useState<{ id: string; customerProfile: string; timestamp: number }[]>([]);
+  const [sessionSelected, setSessionSelected] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [sessionError, setSessionError] = useState(false);
+
+  // RHF forms ------------------------------------------------
   const feedbackForm = useForm<z.infer<typeof feedbackSchema>>({
     resolver: zodResolver(feedbackSchema),
-    defaultValues: {
-      content: '',
-    },
+    defaultValues: { content: '' },
   });
+
 
   const moodboardForm = useForm<z.infer<typeof moodboardSchema>>({
     resolver: zodResolver(moodboardSchema),
@@ -67,381 +80,202 @@ export default function WizardDashboardInner() {
 
   const imageForm = useForm<z.infer<typeof recommendationImageSchema>>({
     resolver: zodResolver(recommendationImageSchema),
-    defaultValues: {
-      imageUrl: '',
-    },
+    defaultValues: { imageUrl: '' },
   });
 
   // Create a ref for scrolling
   const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll chat to bottom
   useEffect(() => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sessionState.feedback]);
 
 
-  // Fetch list of active sessions for the initial view
+
+  // ---------------------------------------------------------
+  // 1️⃣ List all active sessions (refreshed every 5 s)
+  // ---------------------------------------------------------
   useEffect(() => {
     const fetchSessions = async () => {
       try {
         const res = await fetch('/api/sessions');
-        if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setActiveSessions(
-            data.map((s: any) => ({
-              id: s.id,
-              // Ensure customerProfile exists, provide fallback if necessary
-              customerProfile: s.customerProfile || 'Profile not available',
-              timestamp: s.timestamp || Date.now(),
-            }))
-          );
-        } else {
-           console.error('Fetched sessions data is not an array:', data);
-           setActiveSessions([]); // Set to empty array if data is invalid
-        }
+        setActiveSessions(
+          Array.isArray(data)
+            ? data.map((s: any) => ({
+                id: s.id,
+                customerProfile: s.customerProfile || 'Profile not available',
+                timestamp: s.timestamp || Date.now(),
+              }))
+            : []
+        );
       } catch (err) {
         console.error('Failed to fetch sessions list', err);
-         setActiveSessions([]); // Clear sessions on error
+        setActiveSessions([]);
       }
     };
 
-    fetchSessions(); // Fetch immediately on mount
-    const interval = setInterval(fetchSessions, 5000); // Refresh list every 5 seconds
-    return () => clearInterval(interval); // Cleanup interval on unmount
+    fetchSessions();
+    const id = setInterval(fetchSessions, 5000);
+    return () => clearInterval(id);
   }, []);
 
+
+
   
-  // Load specific session data when URL parameter 'session' changes
+  // ---------------------------------------------------------
+  // 2️⃣ Fetch a single session *once* when sessionId changes
+  // ---------------------------------------------------------
   useEffect(() => {
-    const sessionId = searchParams.get('session');
-
-    if (sessionId) {
-      setSessionSelected(true);
-      setIsLoadingSession(true);
-      setSessionError(false);
-
-      const fetchSessionData = async () => {
-        try {
-          console.log(`Fetching session data for ID: ${sessionId}`);
-          
-          // Add timestamp to prevent caching issues
-          const timestamp = Date.now();
-          const response = await fetch(`/api/sessions/${sessionId}?_t=${timestamp}`);
-
-          // Check for errors in the response
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Failed to fetch session ${sessionId}: ${response.status}`, errorText);
-            setSessionError(true);
-            
-            // Display appropriate error message
-            toast({
-              title: 'Error Loading Session',
-              description: `Could not load session ${sessionId}. Status: ${response.status}. ${
-                response.status === 404 ? 'Session may have been deleted.' : 'Server error occurred.'
-              }`,
-              variant: 'destructive',
-            });
-            
-            setIsLoadingSession(false);
-            return;
-          }
-
-          // Parse the response
-          let sessionData;
-          try {
-            sessionData = await response.json();
-            console.log('Session data loaded:', sessionData);
-          } catch (parseError) {
-            console.error(`Error parsing session data for ${sessionId}:`, parseError);
-            setSessionError(true);
-            toast({
-              title: 'Data Error',
-              description: 'Could not parse session data. The data may be corrupted.',
-              variant: 'destructive',
-            });
-            setIsLoadingSession(false);
-            return;
-          }
-
-          // Validate session data - add explicit initialization for missing fields
-          if (!sessionData) {
-            sessionData = { id: sessionId };
-          }
-          
-          // Ensure all arrays exist to prevent rendering errors
-          if (!Array.isArray(sessionData.recommendations)) {
-            sessionData.recommendations = [];
-          }
-          
-          if (!Array.isArray(sessionData.feedback)) {
-            sessionData.feedback = [];
-          }
-          
-          if (!Array.isArray(sessionData.moodboards)) {
-            sessionData.moodboards = [];
-          }
-          
-          // Ensure the ID exists
-          if (!sessionData.id) {
-            sessionData.id = sessionId;
-          }
-
-          console.log(`Successfully loaded session ${sessionId}`);
-          
-          // Update the context with the fetched data
-          if (typeof loadSessionById === 'function') {
-            loadSessionById(sessionData);
-          } else {
-            console.error("StateContext is missing the loadSessionById function!");
-            setSessionError(true);
-            toast({
-              title: 'Application Error',
-              description: 'Could not process session data due to a missing function.',
-              variant: 'destructive',
-            });
-            setIsLoadingSession(false);
-            return;
-          }
-          
-          setIsLoadingSession(false);
-        } catch (error) {
-          console.error(`Network error fetching session ${sessionId}:`, error);
-          setSessionError(true);
-          toast({
-            title: 'Network Error',
-            description: `Failed to connect to server to load session ${sessionId}.`,
-            variant: 'destructive',
-          });
-          setIsLoadingSession(false);
-        }
-      };
-
-      // Add a timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => {
-        if (isLoadingSession) {
-          console.warn(`Session loading timed out for session ${sessionId}`);
-          setIsLoadingSession(false);
-          setSessionError(true);
-          toast({
-            title: 'Loading Timeout',
-            description: 'Session data loading took too long. Please try again.',
-            variant: 'destructive',
-          });
-        }
-      }, 15000); // 15-second timeout
-
-      fetchSessionData();
-
-      // Clear timeout if component unmounts or dependencies change
-      return () => clearTimeout(timeoutId);
-    } else {
-      // Reset state if no session ID in URL
+    if (!sessionId) {
       setSessionSelected(false);
       setSessionError(false);
-    }
-  }, [searchParams, loadSessionById]);
-
-
-  // Poller for real-time updates from the server
-  useEffect(() => {
-    const sessionId = searchParams.get('session');
-    
-    // Don't start polling if no session ID or if still loading the initial data
-    if (!sessionId || isLoadingSession) {
       return;
     }
 
-    console.log(`Starting polling for session ${sessionId}`);
-    
-    let failedAttempts = 0;
-    const MAX_FAILED_ATTEMPTS = 5;
-    
-    const pollSession = async () => {
+    setSessionSelected(true);
+    setIsLoadingSession(true);
+    setSessionError(false);
+
+    let didCancel = false; // avoid state updates after unmount
+
+    const fetchSessionData = async () => {
       try {
-        // Add timestamp to prevent caching issues
-        const timestamp = Date.now();
-        const res = await fetch(`/api/sessions/${sessionId}?_t=${timestamp}`);
+        const response = await fetch(`/api/sessions/${sessionId}?_t=${Date.now()}`);
+        if (!response.ok) throw new Error(String(response.status));
 
-        if (!res.ok) {
-          failedAttempts++;
-          console.warn(`Polling error (attempt ${failedAttempts}/${MAX_FAILED_ATTEMPTS}): Status ${res.status}`);
-          
-          // Stop polling after too many failed attempts
-          if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-            console.error(`Stopping polling after ${MAX_FAILED_ATTEMPTS} failed attempts`);
-            clearInterval(intervalId);
-            
-            // Only show toast on first failure that reaches the threshold
-            if (failedAttempts === MAX_FAILED_ATTEMPTS) {
-              toast({
-                title: 'Connection Issues',
-                description: 'Having trouble connecting to the server. Updates may be delayed.',
-                variant: 'destructive',
-              });
-            }
-          }
-          return;
+        const sessionData = await response.json();
+        if (!sessionData) throw new Error('No data');
+
+        // Defensive normalisation
+        sessionData.id = sessionData.id || sessionId;
+        sessionData.recommendations ??= [];
+        sessionData.feedback ??= [];
+        sessionData.moodboards ??= [];
+
+        if (!didCancel) loadSessionById(sessionData);
+      } catch (err: any) {
+        console.error(`Failed to load session ${sessionId}:`, err);
+        if (!didCancel) setSessionError(true);
+      } finally {
+        if (!didCancel) setIsLoadingSession(false);
+      }
+    };
+
+    // abort if taking too long (15 s)
+    const timeout = setTimeout(() => {
+      if (isLoadingSession) {
+        console.warn(`Session ${sessionId} loading timed out`);
+        setIsLoadingSession(false);
+        setSessionError(true);
+      }
+    }, 15000);
+
+    fetchSessionData();
+
+    return () => {
+      didCancel = true;
+      clearTimeout(timeout);
+    };
+  }, [sessionId, loadSessionById]);
+
+
+
+  // ---------------------------------------------------------
+  // 3️⃣ Poll the session every 10 s for updates after it loads
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (!sessionId || isLoadingSession) return;
+
+    console.log(`Starting polling for session ${sessionId}`);
+
+    let failed = 0;
+    const MAX_FAILS = 5;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}?_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const latest = await res.json();
+        if (!latest?.id) return;
+
+        const cur = sessionState;
+        const newer =
+          (latest.feedback?.length || 0) > (cur.feedback?.length || 0) ||
+          (latest.moodboards?.length || 0) > (cur.moodboards?.length || 0) ||
+          (latest.recommendations?.length || 0) > (cur.recommendations?.length || 0);
+
+        if (newer) {
+          latest.recommendations ??= [];
+          latest.feedback ??= [];
+          latest.moodboards ??= [];
+          loadSessionById(latest);
         }
 
-        // Reset failure counter on success
-        failedAttempts = 0;
-
-        const latestSessionData = await res.json();
-
-        if (!latestSessionData?.id) {
-          console.warn(`Polling: Invalid data received for session ${sessionId}`);
-          return;
-        }
-
-        // Compare with current state to check for updates
-        const current = sessionState;
-        const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
-        const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
-        const hasNewRecommendations = (latestSessionData.recommendations?.length || 0) > (current.recommendations?.length || 0);
-        
-        // Check for updated recommendation images
-        let hasUpdatedImages = false;
-        if (latestSessionData.recommendations && current.recommendations) {
-          for (const newRec of latestSessionData.recommendations) {
-            const matchingRec = current.recommendations.find(r => r.id === newRec.id);
-            if (matchingRec && newRec.imageUrl && newRec.imageUrl !== matchingRec.imageUrl) {
-              hasUpdatedImages = true;
-              break;
-            }
-          }
-        }
-
-        // Update state if changes detected
-        if (hasNewFeedback || hasNewMoodboard || hasNewRecommendations || hasUpdatedImages) {
-          console.log(`Polling: Detected updates for session ${sessionId}`);
-          
-          // Ensure necessary arrays exist before updating state
-          if (!Array.isArray(latestSessionData.recommendations)) {
-            latestSessionData.recommendations = [];
-          }
-          
-          if (!Array.isArray(latestSessionData.feedback)) {
-            latestSessionData.feedback = [];
-          }
-          
-          if (!Array.isArray(latestSessionData.moodboards)) {
-            latestSessionData.moodboards = [];
-          }
-          
-          // Update state using loadSessionById function
-          if (typeof loadSessionById === 'function') {
-            loadSessionById(latestSessionData);
-          } else {
-            console.error("Context is missing 'loadSessionById' function");
-          }
-        }
-      } catch (e) {
-        failedAttempts++;
-        console.error(`Polling error (attempt ${failedAttempts}/${MAX_FAILED_ATTEMPTS}):`, e);
-        
-        // Stop polling after too many failed attempts
-        if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-          console.error(`Stopping polling after ${MAX_FAILED_ATTEMPTS} failed attempts`);
-          clearInterval(intervalId);
+        failed = 0; // reset on success
+      } catch (err) {
+        if (++failed >= MAX_FAILS) {
+          console.error(`Stopping polling after ${MAX_FAILS} failures`);
+          clearInterval(id);
         }
       }
     };
 
-    // Execute immediately on mount
-    pollSession();
-    
-    // Then set up interval
-    const intervalId = setInterval(pollSession, 10000); // Poll every 5 seconds
-    
-    // Cleanup interval on unmount or when dependencies change
-    return () => {
-      console.log(`Stopping polling for session ${sessionId}`);
-      clearInterval(intervalId);
-    };
-  }, [searchParams, loadSessionById, isLoadingSession]);
+    poll();
+    const id = setInterval(poll, 10000); // poll every 10 s
+    return () => clearInterval(id);
+  }, [sessionId, loadSessionById, isLoadingSession]);
 
-  // Handlers for forms
-  const submitFeedback = async (values: z.infer<typeof feedbackSchema>) => {
+
+
+  // ---------------------------------------------------------
+  // Submit handlers (feedback / moodboard / recommendation‑image)
+  // ---------------------------------------------------------
+  const submitFeedback = (values: z.infer<typeof feedbackSchema>) => {
     try {
       addFeedback(values.content, false);
       feedbackForm.reset();
-      toast({
-        title: 'Response sent',
-        description: 'Your response has been sent to the user.',
-      });
-    } catch (error) {
-      console.error('Error submitting response:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to send your response.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Response sent', description: 'Your response has been sent to the user.' });
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'Failed to send your response.', variant: 'destructive' });
     }
   };
 
-  const submitMoodboard = async (values: z.infer<typeof moodboardSchema>) => {
+  const submitMoodboard = (values: z.infer<typeof moodboardSchema>) => {
     try {
-      const images = [
-        values.image1,
-        ...(values.image2 ? [values.image2] : []),
-        ...(values.image3 ? [values.image3] : []),
-        ...(values.image4 ? [values.image4] : []),
-      ];
-
-      addMoodboard({
-        title: values.title,
-        description: values.description,
-        images,
-        createdBy: 'wizard',
-      });
-
+      const images = [values.image1, values.image2, values.image3, values.image4].filter(Boolean) as string[];
+      addMoodboard({ title: values.title, description: values.description, images, createdBy: 'wizard' });
       moodboardForm.reset();
-
-      toast({
-        title: 'Moodboard created',
-        description: "The moodboard has been added to the user's view.",
-      });
-    } catch (error) {
-      console.error('Error creating moodboard:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create the moodboard.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Moodboard created', description: "The moodboard has been added to the user's view." });
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'Failed to create the moodboard.', variant: 'destructive' });
     }
   };
 
-  const submitRecommendationImage = async (values: z.infer<typeof recommendationImageSchema>) => {
+  const submitRecommendationImage = (values: z.infer<typeof recommendationImageSchema>) => {
     if (!editingRecommendationId) return;
-
     try {
       updateRecommendationImage(editingRecommendationId, values.imageUrl);
       imageForm.reset();
       setEditingRecommendationId(null);
-
-      toast({
-        title: 'Image added',
-        description: 'The image has been added to the recommendation.',
-      });
-    } catch (error) {
-      console.error('Error adding image:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to add the image.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Image added', description: 'The image has been added to the recommendation.' });
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'Failed to add the image.', variant: 'destructive' });
     }
   };
 
-  // Destructure state *after* potential updates from useEffect
+  // ---------------------------------------------------------
+  // Derived safe values from session state
+  // ---------------------------------------------------------
   const { customerProfile, recommendations, feedback, moodboards } = sessionState;
+  const safeCustomerProfile = customerProfile || 'No customer profile available.';
+  const safeRecommendations = Array.isArray(recommendations) ? recommendations : [];
+  const safeFeedback = Array.isArray(feedback) ? feedback : [];
+  const safeMoodboards = Array.isArray(moodboards) ? moodboards : [];
 
 
   // --- Conditional Rendering Logic ---
