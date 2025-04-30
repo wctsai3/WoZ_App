@@ -556,7 +556,7 @@ export default function WizardDashboardInner() {
   }
 
   // Case 4: Session selected, loading complete, data is valid -> Show Full Dashboard
-  // Safely access session data, providing fallbacks for missing values
+  // Use safe access to session data properties
   const safeCustomerProfile = customerProfile || 'No customer profile available.';
   const safeRecommendations = Array.isArray(recommendations) ? recommendations : [];
   const safeFeedback = Array.isArray(feedback) ? feedback : [];
@@ -771,6 +771,7 @@ export default function WizardDashboardInner() {
                               </Button>
                             </div>
                           </form>
+                        </Form>
                       </div>
                     )}
                   </CardContent>
@@ -780,12 +781,12 @@ export default function WizardDashboardInner() {
           </TabsContent>
         </Tabs>
 
-        {/* Button to open user view (optional) */}
+        {/* Button to open user view(optional) */}
         <div className="fixed bottom-4 right-4">
           <Button onClick={() => window.open(`/moodboards?session=${sessionState.id}`, '_blank')} variant="secondary">
             Open User View
           </Button>
         </div>
       </div>
-  );
+    );
 }
