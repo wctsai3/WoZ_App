@@ -71,7 +71,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
         const sessionIdFromUrl = new URLSearchParams(window.location.search).get('session');
         if (!sessionIdFromUrl) return;
   
-        const res = await fetch(`/api/session?id=${sessionIdFromUrl}`);
+        const res = await fetch(`/api/sessions?id=${sessionIdFromUrl}`);
         const data = await res.json();
   
         if (data && data.id) {
@@ -90,7 +90,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const saveSession = async () => {
       try {
-        await fetch('/api/session', {
+        await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(sessionState),

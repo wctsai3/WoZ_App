@@ -63,7 +63,7 @@ export default function MoodboardsInnerPage() {
             return;
           }
           
-          const res = await fetch(`/api/session?id=${sessionId}`);
+          const res = await fetch(`/api/sessions?id=${sessionId}`);
           const data = await res.json();
     
           if (!data?.id) return;
