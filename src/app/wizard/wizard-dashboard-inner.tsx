@@ -249,8 +249,6 @@ export default function WizardDashboardInner() {
   }, [searchParams, loadSessionById, toast, isLoadingSession]);
 
 
-  // Update the polling mechanism in wizard-dashboard-inner.tsx
-
   // Poller for real-time updates from the server
   useEffect(() => {
     const sessionId = searchParams.get('session');
@@ -307,9 +305,9 @@ export default function WizardDashboardInner() {
         const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
         const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
         const hasNewRecommendations = (latestSessionData.recommendations?.length || 0) > (current.recommendations?.length || 0);
-        const hasUpdatedImages = false;
         
         // Check for updated recommendation images
+        let hasUpdatedImages = false;
         if (latestSessionData.recommendations && current.recommendations) {
           for (const newRec of latestSessionData.recommendations) {
             const matchingRec = current.recommendations.find(r => r.id === newRec.id);
@@ -559,10 +557,10 @@ export default function WizardDashboardInner() {
 
   // Case 4: Session selected, loading complete, data is valid -> Show Full Dashboard
   // Safely access session data, providing fallbacks for missing values
-  const customerProfile = sessionState.customerProfile || 'No customer profile available.';
-  const recommendations = Array.isArray(sessionState.recommendations) ? sessionState.recommendations : [];
-  const feedback = Array.isArray(sessionState.feedback) ? sessionState.feedback : [];
-  const moodboards = Array.isArray(sessionState.moodboards) ? sessionState.moodboards : [];
+  const safeCustomerProfile = customerProfile || 'No customer profile available.';
+  const safeRecommendations = Array.isArray(recommendations) ? recommendations : [];
+  const safeFeedback = Array.isArray(feedback) ? feedback : [];
+  const safeMoodboards = Array.isArray(moodboards) ? moodboards : [];
 
   return (
       <div className="container mx-auto py-6">
@@ -588,7 +586,7 @@ export default function WizardDashboardInner() {
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[60vh] pr-4">
-                  <p className="whitespace-pre-line">{customerProfile}</p>
+                  <p className="whitespace-pre-line">{safeCustomerProfile}</p>
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -602,8 +600,8 @@ export default function WizardDashboardInner() {
               <CardContent>
                 <ScrollArea className="h-[50vh] pr-4">
                   <div className="space-y-4">
-                    {feedback.length > 0 ? (
-                      feedback.map((message) => (
+                    {safeFeedback.length > 0 ? (
+                      safeFeedback.map((message) => (
                         <div
                           key={message.id}
                           className={cn(
@@ -693,8 +691,8 @@ export default function WizardDashboardInner() {
                   <CardContent>
                     <ScrollArea className="h-[50vh] pr-4">
                       <div className="space-y-4">
-                        {recommendations.length > 0 ? (
-                          recommendations.map((recommendation) => (
+                        {safeRecommendations.length > 0 ? (
+                          safeRecommendations.map((recommendation) => (
                             <Card key={recommendation.id} className="overflow-hidden">
                               <CardHeader className="pb-2">
                                 <CardTitle className="text-lg">{recommendation.item}</CardTitle>
@@ -742,7 +740,7 @@ export default function WizardDashboardInner() {
                     {editingRecommendationId && (
                       <div className="mt-4 p-4 border rounded-md">
                         <h3 className="text-sm font-medium mb-2">
-                          Add/Change Image for {recommendations.find(r => r.id === editingRecommendationId)?.item || 'Recommendation'}
+                          Add/Change Image for {safeRecommendations.find(r => r.id === editingRecommendationId)?.item || 'Recommendation'}
                         </h3>
                         <Form {...imageForm}>
                           <form onSubmit={imageForm.handleSubmit(submitRecommendationImage)} className="space-y-2">
@@ -773,7 +771,6 @@ export default function WizardDashboardInner() {
                               </Button>
                             </div>
                           </form>
-                        </Form>
                       </div>
                     )}
                   </CardContent>
