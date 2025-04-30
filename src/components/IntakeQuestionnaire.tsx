@@ -80,22 +80,20 @@ export default function IntakeQuestionnaire() {
       otherDetails: '',
     },
   });
+  
 
-  async function onSubmit(values: QuestionnaireFormValues) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
     console.log('Form submitted:', values);
 
     try {
       // --- Call backend API to CREATE session ---
-      // Send questionnaire data (or nothing if backend handles it)
       const response = await fetch('/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        // Body: You might send 'values' if your API expects questionnaire data
-        // Or send an empty object if the API just creates a blank session
-         body: JSON.stringify({ questionnaire: values }), // Example: sending questionnaire data
+        body: JSON.stringify({ questionnaire: values }), // Send questionnaire data
       });
 
       if (!response.ok) {

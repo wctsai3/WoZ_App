@@ -4,12 +4,18 @@ import { nanoid } from 'nanoid'; // Or use crypto.randomUUID
 
 export const dynamic = 'force-dynamic';
 
-
+// Only create a new session if POST request has a body with questionnaire data
 export async function POST(req: NextRequest) {
   try {
-    // Maybe expect questionnaire data instead of full session?
-    // const questionnaireData = await req.json();
-    // For now, assuming empty session creation triggered by form submit
+    const body = await req.json();
+    
+    // Only create a new session if there's questionnaire data
+    if (!body || !body.questionnaire) {
+      return NextResponse.json(
+        { error: 'Missing questionnaire data' },
+        { status: 400 }
+      );
+    }
 
     const newSessionId = nanoid(7); // Generate unique ID on the backend
 
@@ -21,12 +27,14 @@ export async function POST(req: NextRequest) {
       feedback: [],
       moodboards: [],
       timestamp: Date.now(), // Add a timestamp
-      // Add questionnaireData here if received from request
+      questionnaire: body.questionnaire // Store the questionnaire data
     };
 
     await redis.set(`session:${newSessionId}`, JSON.stringify(newSession));
 
-    // *** FIX: Return the newly created session object ***
+    console.log(`Created new session: ${newSessionId}`);
+    
+    // Return the newly created session object
     return NextResponse.json(newSession);
 
   } catch (err) {
@@ -41,7 +49,6 @@ export async function GET() {
       if (!keys || keys.length === 0) {
         return NextResponse.json([]);
       }
-
       
       const sessions = await redis.mget(...keys);
       const parsed = sessions

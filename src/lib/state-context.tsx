@@ -33,30 +33,30 @@ type SessionState = {
   moodboards: Moodboard[];
 };
 
-// Define Context Type (Update setCustomerProfile signature)
+// Define Context Type
 type StateContextType = {
   sessionState: SessionState;
   setSessionState: (state: SessionState) => void;
-  setCustomerProfile: (profile: string, sessionId: string) => void; // Keep updated signature
+  setCustomerProfile: (profile: string, sessionId: string) => void;
   addFeedback: (content: string, fromUser: boolean) => void;
   addMoodboard: (moodboard: Omit<Moodboard, 'id'>) => void;
   addRecommendation: (recommendation: Omit<Recommendation, 'id'>) => void;
   updateRecommendationImage: (recommendationId: string, imageUrl: string) => void;
   getSessionId: () => string;
+  loadSessionById: (sessionData: SessionState) => void; // Added this function
 };
 
 // Utility function (keep as is)
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// --- FIX: Correct Default State ---
+// --- FIXED: Correct Default State ---
 const defaultSessionState: SessionState = {
-  id: '', // Initialize with empty string or null, NOT a generated ID
+  id: '', // Initialize with empty string
   customerProfile: null,
   recommendations: [],
   feedback: [],
   moodboards: [],
 };
-// --- End FIX ---
 
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
@@ -64,9 +64,40 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   // Initialize state with the corrected default
   const [sessionState, _setSessionState] = useState<SessionState>(defaultSessionState);
 
-  // Function to update the entire state (used by loadSession and potentially Questionnaire)
+  // Function to update the entire state
   const setSessionState = (state: SessionState) => {
+    console.log("Setting full session state:", state);
     _setSessionState(state);
+    
+    // Persist to server if we have a valid session ID
+    if (state.id) {
+      persistSessionToServer(state.id, state);
+    }
+  };
+  
+  // Added function to load session by ID
+  const loadSessionById = (sessionData: SessionState) => {
+    console.log("Loading session data:", sessionData);
+    _setSessionState(sessionData);
+  };
+  
+  // Helper function to persist session data to server
+  const persistSessionToServer = async (sessionId: string, data: SessionState) => {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      
+      if (!response.ok) {
+        console.error(`Failed to persist session: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Error persisting session:', error);
+    }
   };
 
   // Effect to load existing session data from URL on initial mount
@@ -86,6 +117,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        console.log(`Loading session from URL: ${sessionIdFromUrl}`);
         const res = await fetch(`/api/sessions/${sessionIdFromUrl}`);
 
         if (!res.ok) {
@@ -101,6 +133,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
 
         if (data && data.id) {
+          console.log("Session data loaded successfully:", data);
           _setSessionState(data); // Load the fetched state
         } else {
           console.warn("Loaded session data is invalid", data);
@@ -115,15 +148,20 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
     loadSession();
   }, []); // Run only once on mount
 
-  // --- REMOVED: Auto-save useEffect block ---
-
-  // Function implementations (keep these mostly as they are)
+  // Function implementations
   const setCustomerProfile = (profile: string, sessionId: string) => {
-    _setSessionState(prev => ({
-      ...prev,
-      id: sessionId, // Ensure the correct ID is set
-      customerProfile: profile,
-    }));
+    _setSessionState(prev => {
+      const updatedState = {
+        ...prev,
+        id: sessionId, // Ensure the correct ID is set
+        customerProfile: profile,
+      };
+      
+      // Persist updated state
+      persistSessionToServer(sessionId, updatedState);
+      
+      return updatedState;
+    });
   };
 
   const addFeedback = (content: string, fromUser: boolean) => {
@@ -133,11 +171,20 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       fromUser,
       timestamp: Date.now(),
     };
-    _setSessionState(prev => ({
-      ...prev,
-      // Ensure feedback array exists before spreading
-      feedback: [...(prev.feedback || []), newFeedback],
-    }));
+    
+    _setSessionState(prev => {
+      const updatedState = {
+        ...prev,
+        feedback: [...(prev.feedback || []), newFeedback],
+      };
+      
+      // Persist if we have a session ID
+      if (prev.id) {
+        persistSessionToServer(prev.id, updatedState);
+      }
+      
+      return updatedState;
+    });
   };
 
   const addMoodboard = (moodboard: Omit<Moodboard, 'id'>) => {
@@ -145,10 +192,20 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       ...moodboard,
       id: generateId(),
     };
-    _setSessionState(prev => ({
-      ...prev,
-       moodboards: [...(prev.moodboards || []), newMoodboard],
-    }));
+    
+    _setSessionState(prev => {
+      const updatedState = {
+        ...prev,
+        moodboards: [...(prev.moodboards || []), newMoodboard],
+      };
+      
+      // Persist if we have a session ID
+      if (prev.id) {
+        persistSessionToServer(prev.id, updatedState);
+      }
+      
+      return updatedState;
+    });
   };
 
   const addRecommendation = (recommendation: Omit<Recommendation, 'id'>) => {
@@ -156,19 +213,38 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       ...recommendation,
       id: generateId(),
     };
-    _setSessionState(prev => ({
-      ...prev,
-      recommendations: [...(prev.recommendations || []), newRecommendation],
-    }));
+    
+    _setSessionState(prev => {
+      const updatedState = {
+        ...prev,
+        recommendations: [...(prev.recommendations || []), newRecommendation],
+      };
+      
+      // Persist if we have a session ID
+      if (prev.id) {
+        persistSessionToServer(prev.id, updatedState);
+      }
+      
+      return updatedState;
+    });
   };
 
   const updateRecommendationImage = (recommendationId: string, imageUrl: string) => {
-    _setSessionState(prev => ({
-      ...prev,
-      recommendations: (prev.recommendations || []).map(rec =>
-        rec.id === recommendationId ? { ...rec, imageUrl } : rec
-      ),
-    }));
+    _setSessionState(prev => {
+      const updatedState = {
+        ...prev,
+        recommendations: (prev.recommendations || []).map(rec =>
+          rec.id === recommendationId ? { ...rec, imageUrl } : rec
+        ),
+      };
+      
+      // Persist if we have a session ID
+      if (prev.id) {
+        persistSessionToServer(prev.id, updatedState);
+      }
+      
+      return updatedState;
+    });
   };
 
   // Function to get the current session ID
@@ -179,13 +255,14 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
     <StateContext.Provider
       value={{
         sessionState,
-        setSessionState, // Provide this function
+        setSessionState,
         setCustomerProfile,
         addFeedback,
         addMoodboard,
         addRecommendation,
         updateRecommendationImage,
         getSessionId,
+        loadSessionById, // Added this function to the context
       }}
     >
       {children}

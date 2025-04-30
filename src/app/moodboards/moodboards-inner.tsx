@@ -33,12 +33,12 @@ export default function MoodboardsInnerPage() {
     // IMPORTANT: Replace 'updateSessionState' with the actual function from your StateContext
     // that takes the full session data object and updates the context state.
     const {
-        sessionState,
-        setCustomerProfile,
-        addFeedback,
-        addRecommendation,
-        getSessionId,
-        updateSessionState // Assuming this function exists in your context
+      sessionState,
+      setCustomerProfile,
+      addFeedback,
+      addRecommendation,
+      getSessionId,
+      loadSessionById // Use this function instead of updateSessionState
     } = useStateContext();
 
     const form = useForm<z.infer<typeof feedbackSchema>>({
@@ -58,65 +58,62 @@ export default function MoodboardsInnerPage() {
 
     // Poller for real-time updates from the wizard/backend
     useEffect(() => {
-        const pollSession = async () => {
-            const sessionId = searchParams.get('session');
-            if (!sessionId) {
-                // No session ID in URL, stop polling for this page instance
-                console.log("Polling stopped: No session ID in URL.");
-                return;
+      const pollSession = async () => {
+        const sessionId = searchParams.get('session');
+        if (!sessionId) {
+          // No session ID in URL, stop polling for this page instance
+          console.log("Polling stopped: No session ID in URL.");
+          return;
+        }
+    
+        try {
+          // *** CORRECTION: Use the correct API endpoint for fetching a single session ***
+          const res = await fetch(`/api/sessions/${sessionId}`);
+    
+          if (!res.ok) {
+            // Handle errors gracefully
+            if (res.status === 404) {
+              console.warn(`Polling: Session ${sessionId} not found.`);
+            } else {
+              console.error(`Polling Error: Failed to fetch session ${sessionId}. Status: ${res.status}`);
             }
-
-            try {
-                // *** CORRECTION: Use the correct API endpoint for fetching a single session ***
-                const res = await fetch(`/api/sessions/${sessionId}`);
-
-                if (!res.ok) {
-                     // Handle errors (e.g., session not found 404) gracefully
-                     if (res.status === 404) {
-                        console.warn(`Polling: Session ${sessionId} not found.`);
-                     } else {
-                        console.error(`Polling Error: Failed to fetch session ${sessionId}. Status: ${res.status}`);
-                     }
-                    return; // Stop processing if fetch failed
-                }
-
-                const latestSessionData = await res.json();
-
-                if (!latestSessionData?.id) {
-                     console.warn(`Polling: Invalid data received for session ${sessionId}.`, latestSessionData);
-                     return; // Stop if data is invalid
-                }
-
-                // Basic comparison to check for updates (can be improved)
-                const current = sessionState;
-                const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
-                const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
-                const hasNewImages = (latestSessionData.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
-                                     > (current.recommendations?.filter((r: any) => r.imageUrl)?.length || 0);
-
-                if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
-                    console.log(`Polling: Detected updates for session ${sessionId}. Updating state.`);
-                    // *** CORRECTION: Update state using context function instead of reloading ***
-                    if (typeof updateSessionState === 'function') {
-                         updateSessionState(latestSessionData);
-                    } else {
-                         console.error("Polling Error: Context is missing 'updateSessionState' function. Reloading as fallback.");
-                         // Fallback (less ideal)
-                         window.location.reload();
-                    }
-                }
-            } catch (e) {
-                console.error('Polling Error: Exception during fetch/processing.', e);
+            return; // Stop processing if fetch failed
+          }
+    
+          const latestSessionData = await res.json();
+    
+          if (!latestSessionData?.id) {
+            console.warn(`Polling: Invalid data received for session ${sessionId}.`, latestSessionData);
+            return; // Stop if data is invalid
+          }
+    
+          // Basic comparison to check for updates (can be improved)
+          const current = sessionState;
+          const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
+          const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
+          const hasNewImages = (latestSessionData.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
+                               > (current.recommendations?.filter((r: any) => r.imageUrl)?.length || 0);
+    
+          if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
+            console.log(`Polling: Detected updates for session ${sessionId}. Updating state.`);
+            // *** CORRECTION: Update state using loadSessionById function instead ***
+            if (typeof loadSessionById === 'function') {
+              loadSessionById(latestSessionData);
+            } else {
+              console.error("Polling Error: Context is missing 'loadSessionById' function. Reloading as fallback.");
+              // Fallback (less ideal)
+              window.location.reload();
             }
-        };
-
-        const interval = setInterval(pollSession, 5000); // Poll every 5 seconds
-        return () => clearInterval(interval); // Cleanup interval on unmount
-
-        // Dependency array: Includes searchParams to get sessionId,
-        // updateSessionState to call it, and sessionState for comparison.
-        // Be mindful if updateSessionState causes sessionState to change rapidly, potentially leading to many calls.
-    }, [searchParams, updateSessionState, sessionState]);
+          }
+        } catch (e) {
+          console.error('Polling Error: Exception during fetch/processing.', e);
+        }
+      };
+    
+      const interval = setInterval(pollSession, 5000); // Poll every 5 seconds
+      return () => clearInterval(interval); // Cleanup interval on unmount
+    
+    }, [searchParams, loadSessionById, sessionState]);
 
 
     // Hide the wizard prompt after first displaying it or if feedback exists
