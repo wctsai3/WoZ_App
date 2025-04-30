@@ -55,43 +55,32 @@ export default function MoodboardsInnerPage() {
   
     // Add a poller for real-time updates
     useEffect(() => {
-      // Function to check for localStorage changes
-      const checkForUpdates = () => {
+      const pollSession = async () => {
         try {
-          const savedState = localStorage.getItem('woz_session_state');
-          if (savedState) {
-            // Parse to compare with current state
-            const parsedState = JSON.parse(savedState);
-            
-            // Simple way to detect updates - compare lengths
-            const currentFeedbackCount = sessionState.feedback.length;
-            const savedFeedbackCount = parsedState.feedback.length;
-            
-            const currentMoodboardCount = sessionState.moodboards.length;
-            const savedMoodboardCount = parsedState.moodboards.length;
-            
-            const currentRecsWithImages = sessionState.recommendations.filter(r => r.imageUrl).length;
-            const savedRecsWithImages = parsedState.recommendations.filter((r: any) => r.imageUrl).length;
-            
-            // If we detect more items in storage than in our state, force a window reload
-            // This happens when the wizard adds content in another window/tab
-            if (savedFeedbackCount > currentFeedbackCount || 
-                savedMoodboardCount > currentMoodboardCount || 
-                savedRecsWithImages > currentRecsWithImages) {
-              // Reload the page to get fresh state from localStorage
-              window.location.reload();
-            }
+          const res = await fetch('/api/session');
+          const data = await res.json();
+    
+          if (!data?.id) return;
+    
+          const current = sessionState;
+    
+          const hasNewFeedback = (data.feedback?.length || 0) > current.feedback.length;
+          const hasNewMoodboard = (data.moodboards?.length || 0) > current.moodboards.length;
+          const hasNewImages = (data.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
+                              > current.recommendations.filter(r => r.imageUrl).length;
+    
+          if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
+            window.location.reload(); // 或：setSessionState(data);
           }
-        } catch (error) {
-          console.error('Error checking for updates', error);
+        } catch (e) {
+          console.error('Error polling session from Redis', e);
         }
       };
-      
-      // Poll every 5 seconds for changes
-      const interval = setInterval(checkForUpdates, 5000);
-      
+    
+      const interval = setInterval(pollSession, 5000);
       return () => clearInterval(interval);
     }, [sessionState]);
+    
   
     // Update the prompt display logic
     // Hide the wizard prompt after first displaying it

@@ -42,10 +42,7 @@ type StateContextType = {
   getSessionId: () => string;
 };
 
-// Generate a simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 9);
-
-// Create a session ID for this session
 const SESSION_ID = generateId();
 
 const defaultSessionState: SessionState = {
@@ -61,21 +58,38 @@ const StateContext = createContext<StateContextType | undefined>(undefined);
 export function StateProvider({ children }: { children: React.ReactNode }) {
   const [sessionState, setSessionState] = useState<SessionState>(defaultSessionState);
 
-  // On first load, check if there's saved state in localStorage
+  // 🚀 新增：從 Redis 載入初始 session 資料
   useEffect(() => {
-    const savedState = localStorage.getItem('woz_session_state');
-    if (savedState) {
+    const loadSession = async () => {
       try {
-        setSessionState(JSON.parse(savedState));
+        const res = await fetch('/api/session');
+        const data = await res.json();
+        if (data && data.id) {
+          setSessionState(data);
+        }
       } catch (e) {
-        console.error('Failed to parse saved state', e);
+        console.error('Failed to load session from Redis', e);
       }
-    }
+    };
+
+    loadSession();
   }, []);
 
-  // Save state to localStorage whenever it changes
+  // 🚀 新增：每次 sessionState 更新就同步到 Redis
   useEffect(() => {
-    localStorage.setItem('woz_session_state', JSON.stringify(sessionState));
+    const saveSession = async () => {
+      try {
+        await fetch('/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sessionState),
+        });
+      } catch (e) {
+        console.error('Failed to save session to Redis', e);
+      }
+    };
+
+    saveSession();
   }, [sessionState]);
 
   const setCustomerProfile = (profile: string) => {
@@ -126,10 +140,8 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   const updateRecommendationImage = (recommendationId: string, imageUrl: string) => {
     setSessionState(prev => ({
       ...prev,
-      recommendations: prev.recommendations.map(rec => 
-        rec.id === recommendationId 
-          ? { ...rec, imageUrl } 
-          : rec
+      recommendations: prev.recommendations.map(rec =>
+        rec.id === recommendationId ? { ...rec, imageUrl } : rec
       ),
     }));
   };
@@ -159,4 +171,4 @@ export function useStateContext() {
     throw new Error('useStateContext must be used within a StateProvider');
   }
   return context;
-} 
+}

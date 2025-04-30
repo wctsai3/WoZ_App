@@ -34,27 +34,6 @@ const recommendationImageSchema = z.object({
 });
 
 
-// Function to get active sessions from localStorage
-const getActiveSessions = () => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stateString = localStorage.getItem('woz_session_state');
-      if (!stateString) return [];
-      const state = JSON.parse(stateString);
-      if (state.customerProfile) {
-        return [{
-          id: state.id,
-          customerProfile: state.customerProfile,
-          timestamp: Date.now(),
-        }];
-      }
-      return [];
-    } catch (error) {
-      console.error('Error parsing sessions from localStorage', error);
-      return [];
-    }
-  };
-  
 
 export default function WizardDashboardInner() {
     const { sessionState, addFeedback, addMoodboard, updateRecommendationImage } = useStateContext();
@@ -103,50 +82,55 @@ export default function WizardDashboardInner() {
   
     // Poll for changes from user
     useEffect(() => {
-      // Function to check for localStorage changes to detect user feedback
-      const checkForUserUpdates = () => {
+      const pollSession = async () => {
         try {
-          const savedState = localStorage.getItem('woz_session_state');
-          if (savedState) {
-            // Parse to compare with current state
-            const parsedState = JSON.parse(savedState);
-            
-            // Count user messages in current state
-            const currentUserMsgCount = sessionState.feedback.filter(f => f.fromUser).length;
-            // Count user messages in saved state
-            const savedUserMsgCount = parsedState.feedback.filter((f: any) => f.fromUser).length;
-            
-            // If we detect more user messages in storage, reload to get latest
-            if (savedUserMsgCount > currentUserMsgCount) {
-              window.location.reload();
-            }
+          const res = await fetch('/api/session');
+          const data = await res.json();
+    
+          const currentCount = sessionState.feedback.filter(f => f.fromUser).length;
+          const latestCount = data?.feedback?.filter((f: any) => f.fromUser).length || 0;
+    
+          if (latestCount > currentCount) {
+            window.location.reload(); // 或 setSessionState(data) 替換整個 state
           }
-        } catch (error) {
-          console.error('Error checking for user updates', error);
+        } catch (e) {
+          console.error('Failed to poll feedback updates from Redis', e);
         }
       };
-      
-      // Poll every 5 seconds for user feedback
-      const interval = setInterval(checkForUserUpdates, 5000);
-      
+    
+      const interval = setInterval(pollSession, 5000);
       return () => clearInterval(interval);
-    }, [sessionState]);
+    }, [sessionState.feedback]);
+    
   
     // Check for active sessions regularly
     useEffect(() => {
-      const checkSessions = () => {
-        const sessions = getActiveSessions();
-        setActiveSessions(sessions);
+      const checkSessions = async () => {
+        try {
+          const res = await fetch('/api/session');
+          const data = await res.json();
+    
+          if (data && data.customerProfile) {
+            setActiveSessions([{
+              id: data.id,
+              customerProfile: data.customerProfile,
+              timestamp: Date.now(),
+            }]);
+          } else {
+            setActiveSessions([]);
+          }
+        } catch (error) {
+          console.error('Failed to fetch session from Redis', error);
+          setActiveSessions([]);
+        }
       };
-      
-      // Check immediately
+    
       checkSessions();
-      
-      // Then set interval to check every 5 seconds
+    
       const interval = setInterval(checkSessions, 5000);
-      
       return () => clearInterval(interval);
     }, []);
+    
   
     // Check if session is in URL
     useEffect(() => {

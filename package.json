@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@upstash/redis": "latest", 
     "@genkit-ai/googleai": "^1.0.4",
     "@genkit-ai/next": "^1.0.4",
     "@hookform/resolvers": "^4.1.3",
