@@ -389,13 +389,6 @@ export default function WizardDashboardInner() {
     );
   }
 
-  // Case 4: Session selected, loading complete, data is valid -> Show Full Dashboard
-  // Use safe access to session data properties
-  const safeCustomerProfile = customerProfile || 'No customer profile available.';
-  const safeRecommendations = Array.isArray(recommendations) ? recommendations : [];
-  const safeFeedback = Array.isArray(feedback) ? feedback : [];
-  const safeMoodboards = Array.isArray(moodboards) ? moodboards : [];
-
   return (
       <div className="container mx-auto py-6">
         <div className="flex justify-between items-center mb-6">
