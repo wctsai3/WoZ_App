@@ -57,7 +57,13 @@ export default function MoodboardsInnerPage() {
     useEffect(() => {
       const pollSession = async () => {
         try {
-          const res = await fetch('/api/session');
+          const sessionId = searchParams.get('session');
+          if (!sessionId) {
+            router.push('/');
+            return;
+          }
+          
+          const res = await fetch(`/api/session?id=${sessionId}`);
           const data = await res.json();
     
           if (!data?.id) return;

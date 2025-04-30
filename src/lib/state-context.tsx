@@ -34,6 +34,7 @@ type SessionState = {
 
 type StateContextType = {
   sessionState: SessionState;
+  setSessionState: (state: SessionState) => void;
   setCustomerProfile: (profile: string) => void;
   addFeedback: (content: string, fromUser: boolean) => void;
   addMoodboard: (moodboard: Omit<Moodboard, 'id'>) => void;
@@ -56,14 +57,23 @@ const defaultSessionState: SessionState = {
 const StateContext = createContext<StateContextType | undefined>(undefined);
 
 export function StateProvider({ children }: { children: React.ReactNode }) {
-  const [sessionState, setSessionState] = useState<SessionState>(defaultSessionState);
+  const [sessionState, _setSessionState] = useState<SessionState>(defaultSessionState);
 
-  // 🚀 新增：從 Redis 載入初始 session 資料
+  
+  const setSessionState = (state: SessionState) => {
+    _setSessionState(state);
+  };
+
+
   useEffect(() => {
     const loadSession = async () => {
       try {
-        const res = await fetch('/api/session');
+        const sessionIdFromUrl = new URLSearchParams(window.location.search).get('session');
+        if (!sessionIdFromUrl) return;
+  
+        const res = await fetch(`/api/session?id=${sessionIdFromUrl}`);
         const data = await res.json();
+  
         if (data && data.id) {
           setSessionState(data);
         }
@@ -71,11 +81,12 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
         console.error('Failed to load session from Redis', e);
       }
     };
-
+  
     loadSession();
   }, []);
+  
 
-  // 🚀 新增：每次 sessionState 更新就同步到 Redis
+
   useEffect(() => {
     const saveSession = async () => {
       try {
@@ -93,7 +104,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
   }, [sessionState]);
 
   const setCustomerProfile = (profile: string) => {
-    setSessionState(prev => ({
+    _setSessionState(prev => ({
       ...prev,
       customerProfile: profile,
     }));
@@ -107,7 +118,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       timestamp: Date.now(),
     };
 
-    setSessionState(prev => ({
+    _setSessionState(prev => ({
       ...prev,
       feedback: [...prev.feedback, newFeedback],
     }));
@@ -119,7 +130,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       id: generateId(),
     };
 
-    setSessionState(prev => ({
+    _setSessionState(prev => ({
       ...prev,
       moodboards: [...prev.moodboards, newMoodboard],
     }));
@@ -131,14 +142,14 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
       id: generateId(),
     };
 
-    setSessionState(prev => ({
+    _setSessionState(prev => ({
       ...prev,
       recommendations: [...prev.recommendations, newRecommendation],
     }));
   };
 
   const updateRecommendationImage = (recommendationId: string, imageUrl: string) => {
-    setSessionState(prev => ({
+    _setSessionState(prev => ({
       ...prev,
       recommendations: prev.recommendations.map(rec =>
         rec.id === recommendationId ? { ...rec, imageUrl } : rec
@@ -152,6 +163,7 @@ export function StateProvider({ children }: { children: React.ReactNode }) {
     <StateContext.Provider
       value={{
         sessionState,
+        setSessionState,
         setCustomerProfile,
         addFeedback,
         addMoodboard,

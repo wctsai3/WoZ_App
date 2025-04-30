@@ -86,6 +86,16 @@ export default function WizardDashboardInner() {
         try {
           const res = await fetch('/api/session');
           const data = await res.json();
+
+          if (Array.isArray(data)) {
+            setActiveSessions(
+              data.map((s: any) => ({
+                id: s.id,
+                customerProfile: s.customerProfile,
+                timestamp: s.timestamp || Date.now(),
+              }))
+            );
+          }
     
           const currentCount = sessionState.feedback.filter(f => f.fromUser).length;
           const latestCount = data?.feedback?.filter((f: any) => f.fromUser).length || 0;
