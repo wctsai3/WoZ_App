@@ -246,7 +246,7 @@ export default function WizardDashboardInner() {
       setSessionSelected(false);
       setSessionError(false);
     }
-  }, [searchParams, loadSessionById, toast, isLoadingSession]);
+  }, [searchParams, loadSessionById]);
 
 
   // Poller for real-time updates from the server
@@ -358,14 +358,14 @@ export default function WizardDashboardInner() {
     pollSession();
     
     // Then set up interval
-    const intervalId = setInterval(pollSession, 5000); // Poll every 5 seconds
+    const intervalId = setInterval(pollSession, 10000); // Poll every 5 seconds
     
     // Cleanup interval on unmount or when dependencies change
     return () => {
       console.log(`Stopping polling for session ${sessionId}`);
       clearInterval(intervalId);
     };
-  }, [searchParams, loadSessionById, sessionState, isLoadingSession, toast]);
+  }, [searchParams, loadSessionById, isLoadingSession]);
 
   // Handlers for forms
   const submitFeedback = async (values: z.infer<typeof feedbackSchema>) => {
