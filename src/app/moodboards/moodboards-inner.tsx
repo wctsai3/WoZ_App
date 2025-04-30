@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
-import { useStateContext } from '@/lib/state-context';
+import { useStateContext } from '@/lib/state-context'; // Ensure this path is correct
 import Link from 'next/link';
 
 const feedbackSchema = z.object({
@@ -26,370 +26,465 @@ const feedbackSchema = z.object({
 export default function MoodboardsInnerPage() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true); // For initial session generation/loading
     const [showWizardPrompt, setShowWizardPrompt] = useState(true);
     const chatEndRef = useRef<HTMLDivElement>(null);
-  
-    const { 
-      sessionState, 
-      setCustomerProfile, 
-      addFeedback, 
-      addRecommendation,
-      getSessionId
+
+    // IMPORTANT: Replace 'updateSessionState' with the actual function from your StateContext
+    // that takes the full session data object and updates the context state.
+    const {
+        sessionState,
+        setCustomerProfile,
+        addFeedback,
+        addRecommendation,
+        getSessionId,
+        updateSessionState // Assuming this function exists in your context
     } = useStateContext();
-  
+
     const form = useForm<z.infer<typeof feedbackSchema>>({
-      resolver: zodResolver(feedbackSchema),
-      defaultValues: {
+        resolver: zodResolver(feedbackSchema),
+        defaultValues: {
         feedback: '',
-      },
+        },
     });
-  
+
     // Get destructured values from session state
-    const { 
-      recommendations, 
-      moodboards, 
-      customerProfile, 
-      feedback 
+    const {
+        recommendations,
+        moodboards,
+        customerProfile,
+        feedback
     } = sessionState;
-  
-    // Add a poller for real-time updates
+
+    // Poller for real-time updates from the wizard/backend
     useEffect(() => {
-      const pollSession = async () => {
-        try {
-          const sessionId = searchParams.get('session');
-          if (!sessionId) {
-            router.push('/');
-            return;
-          }
-          
-          const res = await fetch(`/api/sessions?id=${sessionId}`);
-          const data = await res.json();
-    
-          if (!data?.id) return;
-    
-          const current = sessionState;
-    
-          const hasNewFeedback = (data.feedback?.length || 0) > current.feedback.length;
-          const hasNewMoodboard = (data.moodboards?.length || 0) > current.moodboards.length;
-          const hasNewImages = (data.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
-                              > current.recommendations.filter(r => r.imageUrl).length;
-    
-          if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
-            window.location.reload(); // 或：setSessionState(data);
-          }
-        } catch (e) {
-          console.error('Error polling session from Redis', e);
+        const pollSession = async () => {
+            const sessionId = searchParams.get('session');
+            if (!sessionId) {
+                // No session ID in URL, stop polling for this page instance
+                console.log("Polling stopped: No session ID in URL.");
+                return;
+            }
+
+            try {
+                // *** CORRECTION: Use the correct API endpoint for fetching a single session ***
+                const res = await fetch(`/api/sessions/${sessionId}`);
+
+                if (!res.ok) {
+                     // Handle errors (e.g., session not found 404) gracefully
+                     if (res.status === 404) {
+                        console.warn(`Polling: Session ${sessionId} not found.`);
+                     } else {
+                        console.error(`Polling Error: Failed to fetch session ${sessionId}. Status: ${res.status}`);
+                     }
+                    return; // Stop processing if fetch failed
+                }
+
+                const latestSessionData = await res.json();
+
+                if (!latestSessionData?.id) {
+                     console.warn(`Polling: Invalid data received for session ${sessionId}.`, latestSessionData);
+                     return; // Stop if data is invalid
+                }
+
+                // Basic comparison to check for updates (can be improved)
+                const current = sessionState;
+                const hasNewFeedback = (latestSessionData.feedback?.length || 0) > (current.feedback?.length || 0);
+                const hasNewMoodboard = (latestSessionData.moodboards?.length || 0) > (current.moodboards?.length || 0);
+                const hasNewImages = (latestSessionData.recommendations?.filter((r: any) => r.imageUrl)?.length || 0)
+                                     > (current.recommendations?.filter((r: any) => r.imageUrl)?.length || 0);
+
+                if (hasNewFeedback || hasNewMoodboard || hasNewImages) {
+                    console.log(`Polling: Detected updates for session ${sessionId}. Updating state.`);
+                    // *** CORRECTION: Update state using context function instead of reloading ***
+                    if (typeof updateSessionState === 'function') {
+                         updateSessionState(latestSessionData);
+                    } else {
+                         console.error("Polling Error: Context is missing 'updateSessionState' function. Reloading as fallback.");
+                         // Fallback (less ideal)
+                         window.location.reload();
+                    }
+                }
+            } catch (e) {
+                console.error('Polling Error: Exception during fetch/processing.', e);
+            }
+        };
+
+        const interval = setInterval(pollSession, 5000); // Poll every 5 seconds
+        return () => clearInterval(interval); // Cleanup interval on unmount
+
+        // Dependency array: Includes searchParams to get sessionId,
+        // updateSessionState to call it, and sessionState for comparison.
+        // Be mindful if updateSessionState causes sessionState to change rapidly, potentially leading to many calls.
+    }, [searchParams, updateSessionState, sessionState]);
+
+
+    // Hide the wizard prompt after first displaying it or if feedback exists
+    useEffect(() => {
+        if (feedback && feedback.length > 0) {
+            setShowWizardPrompt(false);
         }
-      };
-    
-      const interval = setInterval(pollSession, 5000);
-      return () => clearInterval(interval);
-    }, [sessionState]);
-    
-  
-    // Update the prompt display logic
-    // Hide the wizard prompt after first displaying it
-    useEffect(() => {
-      // If we have feedback, don't show the wizard prompt again
-      if (feedback && feedback.length > 0) {
-        setShowWizardPrompt(false);
-      }
     }, [feedback]);
-  
-    // Auto-scroll to bottom of chat whenever feedback changes
+
+    // Auto-scroll chat to bottom
     useEffect(() => {
-      if (chatEndRef.current) {
+        if (chatEndRef.current) {
         chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-      }
+        }
     }, [feedback]);
-  
+
+    // Initialize session: Generate profile and recommendations if not already present
     useEffect(() => {
-      const initSession = async () => {
-        // If we already have a customer profile, don't regenerate
-        if (sessionState.customerProfile) {
-          setLoading(false);
-          return;
-        }
-  
-        setLoading(true);
-  
-        const params: { [key: string]: string } = {};
-        searchParams.forEach((value, key) => {
-          params[key] = value;
-        });
-        
-        // If no search params, redirect to home
-        if (Object.keys(params).length === 0) {
-          router.push('/');
-          return;
-        }
-  
-        try {
-          // Generate customer profile with Gemini
-          const customerProfileResult = await generateCustomerProfile({
-            ...params,
-          } as any);
-          
-          if (!customerProfileResult?.profileSummary) {
-            throw new Error('Failed to generate customer profile');
-          }
-          
-          // Save to state context
-          setCustomerProfile(customerProfileResult.profileSummary);
-          
-          // Generate initial design recommendations
-          const designRecommendationsResult = await generateDesignRecommendations({
-            customerProfile: customerProfileResult.profileSummary,
-            finalMoodboardDescription: 'Initial moodboard based on customer profile',
-          });
-          
-          // Add recommendations to state
-          if (designRecommendationsResult?.recommendations) {
-            designRecommendationsResult.recommendations.forEach((rec: any) => {
-              addRecommendation({
-                item: rec.item,
-                explanation: rec.explanation
-              });
+        const initSession = async () => {
+             // Use sessionId from URL as the source of truth for initialization check
+             const sessionIdFromUrl = searchParams.get('session');
+
+             if (!sessionIdFromUrl) {
+                console.log("initSession: No session ID in URL. Redirecting.");
+                 router.push('/'); // Redirect if no session specified
+                 return;
+             }
+
+             // If we already have a customer profile loaded for this session ID
+             // (assuming getSessionId() correctly reflects the loaded session), don't regenerate.
+             if (sessionState.customerProfile && getSessionId() === sessionIdFromUrl) {
+                console.log(`initSession: Profile already exists for session ${sessionIdFromUrl}. Skipping generation.`);
+                setLoading(false);
+                return;
+             }
+
+            setLoading(true);
+
+            const params: { [key: string]: string } = {};
+            searchParams.forEach((value, key) => {
+                if (key !== 'session') { // Don't include session ID itself in AI params
+                     params[key] = value;
+                }
             });
-          }
-        } catch (error) {
-          console.error('Error initializing session:', error);
-          toast({
-            title: 'Error',
-            description: 'Failed to initialize your design session. Please try again.',
-            variant: 'destructive',
-          });
-        } finally {
-          setLoading(false);
-        }
-      };
-  
-      initSession();
-    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation]);
-  
+
+            // Ensure we have questionnaire params before calling AI
+            if (Object.keys(params).length === 0) {
+                console.log("initSession: No questionnaire parameters found. Cannot generate profile.");
+                // Maybe redirect or show an error? For now, just stop loading.
+                setLoading(false);
+                // Consider showing a message that questionnaire data is missing
+                 toast({
+                   title: 'Missing Information',
+                   description: 'Could not find questionnaire answers in the URL to initialize the session.',
+                   variant: 'destructive',
+                 });
+                return;
+            }
+
+            try {
+                console.log(`initSession: Generating profile for session ${sessionIdFromUrl}...`);
+                const customerProfileResult = await generateCustomerProfile({ ...params } as any);
+
+                if (!customerProfileResult?.profileSummary) {
+                throw new Error('Failed to generate customer profile');
+                }
+                console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
+
+                // IMPORTANT: Ensure setCustomerProfile also sets the correct sessionId in the context
+                setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl); // Assuming setCustomerProfile takes ID
+
+                const designRecommendationsResult = await generateDesignRecommendations({
+                    customerProfile: customerProfileResult.profileSummary,
+                    finalMoodboardDescription: 'Initial moodboard based on customer profile',
+                });
+
+                if (designRecommendationsResult?.recommendations) {
+                    console.log(`initSession: Adding ${designRecommendationsResult.recommendations.length} recommendations.`);
+                    designRecommendationsResult.recommendations.forEach((rec: any) => {
+                        addRecommendation({
+                            item: rec.item,
+                            explanation: rec.explanation
+                        }); // Assuming addRecommendation links to the current session in context
+                    });
+                } else {
+                     console.log("initSession: No initial recommendations generated.");
+                }
+
+                 // Optionally trigger a save to backend here if state isn't automatically persisted
+                 // await fetch(`/api/sessions/${sessionIdFromUrl}`, { method: 'PUT', body: JSON.stringify(updatedSessionState) });
+
+
+            } catch (error) {
+                console.error('Error initializing session:', error);
+                toast({
+                title: 'Initialization Error',
+                description: 'Failed to initialize your design session. Please check inputs or try again.',
+                variant: 'destructive',
+                });
+                // Maybe redirect back to home or questionnaire on failure
+                 router.push('/');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        initSession();
+        // Dependencies: searchParams triggers re-init if URL changes.
+        // sessionState.customerProfile prevents re-running if profile already loaded.
+        // Context functions are dependencies if they change. getSessionId needed for check.
+    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, getSessionId]);
+
+    // Handler for submitting feedback
     const onSubmit = async (values: z.infer<typeof feedbackSchema>) => {
-      try {
-        // Add feedback to state
-        addFeedback(values.feedback, true);
-        
-        form.reset();
-        
-        toast({
-          title: 'Feedback submitted',
-          description: 'Your feedback has been sent to our design team.',
-        });
-  
-        setShowWizardPrompt(true);
-      } catch (error) {
-        console.error('Error submitting feedback:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to submit your feedback. Please try again.',
-          variant: 'destructive',
-        });
-      }
+        try {
+             const currentSessionId = getSessionId(); // Get current session ID from context
+             if (!currentSessionId) {
+                 toast({ title: 'Error', description: 'No active session found to submit feedback to.', variant: 'destructive'});
+                 return;
+             }
+
+             console.log(`Submitting feedback for session ${currentSessionId}:`, values.feedback);
+            // Add feedback to local state via context
+            addFeedback(values.feedback, true); // true indicates feedback is from the user
+
+            // TODO: Persist feedback to the backend/Redis associated with the currentSessionId
+            // Example:
+            // await fetch(`/api/sessions/${currentSessionId}/feedback`, { // Assuming a specific feedback endpoint
+            //    method: 'POST',
+            //    headers: { 'Content-Type': 'application/json' },
+            //    body: JSON.stringify({ content: values.feedback, fromUser: true })
+            // });
+            // Or update the whole session:
+            // await fetch(`/api/sessions/${currentSessionId}`, { method: 'PUT', ... })
+
+            form.reset();
+
+            toast({
+                title: 'Feedback submitted',
+                description: 'Your feedback has been sent to our design team.',
+            });
+
+            // Decide if showing the wizard prompt again makes sense after feedback
+            // setShowWizardPrompt(true);
+
+        } catch (error) {
+            console.error('Error submitting feedback:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to submit your feedback. Please try again.',
+                variant: 'destructive',
+            });
+        }
     };
-  
+
+    // --- Rendering Logic ---
+
     if (loading) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen py-2">
-          <main className="flex flex-col items-center justify-center w-full flex-1 px-20 text-center">
-            <h1 className="text-4xl font-bold">
-              Preparing Your <span className="text-primary">Design Experience</span>
-            </h1>
-            <div className="mt-8 space-y-4 w-full max-w-3xl">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-48 w-full" />
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen py-2">
+            <main className="flex flex-col items-center justify-center w-full flex-1 px-20 text-center">
+                <h1 className="text-4xl font-bold">
+                Preparing Your <span className="text-primary">Design Experience</span>
+                </h1>
+                <div className="mt-8 space-y-4 w-full max-w-3xl">
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+                </div>
+            </main>
             </div>
-          </main>
-        </div>
-      );
+        );
     }
-  
+
+    // Get session ID for the wizard link *after* loading/initialization
+    const currentSessionIdForLink = getSessionId();
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen py-2">
-        <main className="flex flex-col items-center justify-center w-full flex-1 px-4 md:px-20 text-center">
-          <h1 className="text-4xl font-bold">
-            Your <span className="text-primary">Design Recommendations</span>
-          </h1>
-  
-          {showWizardPrompt && (
-            <div className="mt-4 p-4 bg-yellow-50 rounded-md border border-yellow-200 w-full max-w-4xl">
-              <p className="text-sm text-yellow-800">
-                For the wizard: <Link href={`/wizard?session=${getSessionId()}`} className="underline font-medium">Click here</Link> to open the wizard view
-              </p>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="mt-1 h-6 text-xs"
-                onClick={() => setShowWizardPrompt(false)}
-              >
-                Dismiss
-              </Button>
-            </div>
-          )}
-  
-          <Tabs defaultValue="profile" className="w-full max-w-4xl mt-6">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="profile">Customer Profile</TabsTrigger>
-              <TabsTrigger value="moodboards">Moodboards</TabsTrigger>
-              <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="profile" className="mt-6">
-              {customerProfile ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Your Design Profile</CardTitle>
-                    <CardDescription>Based on your questionnaire responses</CardDescription>
-                  </CardHeader>
-                  <CardContent className="text-left">
-                    <p>{customerProfile}</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <p>No profile information available yet.</p>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="moodboards" className="mt-6">
-              {moodboards && moodboards.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {moodboards.map((moodboard) => (
-                    <Card key={moodboard.id} className="overflow-hidden">
-                      <CardHeader className="pb-2">
-                        <CardTitle>{moodboard.title}</CardTitle>
-                        <CardDescription>Created by {moodboard.createdBy === 'wizard' ? 'Design Team' : 'AI'}</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-left text-sm mb-4">{moodboard.description}</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {moodboard.images.map((imageUrl, imgIndex) => (
+        <div className="flex flex-col items-center justify-center min-h-screen py-2">
+            <main className="flex flex-col items-center justify-center w-full flex-1 px-4 md:px-20 text-center">
+            <h1 className="text-4xl font-bold">
+                Your <span className="text-primary">Design Recommendations</span>
+            </h1>
+
+            {/* Show wizard link only if we have a valid session ID */}
+            {showWizardPrompt && currentSessionIdForLink && (
+                <div className="mt-4 p-4 bg-yellow-50 rounded-md border border-yellow-200 w-full max-w-4xl">
+                <p className="text-sm text-yellow-800">
+                    Design Team View: <Link href={`/wizard?session=${currentSessionIdForLink}`} className="underline font-medium">Click here</Link> to open the dashboard for this session.
+                </p>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-6 text-xs"
+                    onClick={() => setShowWizardPrompt(false)}
+                >
+                    Dismiss
+                </Button>
+                </div>
+            )}
+
+            <Tabs defaultValue="profile" className="w-full max-w-4xl mt-6">
+                <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="profile">Customer Profile</TabsTrigger>
+                <TabsTrigger value="moodboards">Moodboards</TabsTrigger>
+                <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="profile" className="mt-6">
+                {customerProfile ? (
+                    <Card>
+                    <CardHeader>
+                        <CardTitle>Your Design Profile</CardTitle>
+                        <CardDescription>Based on your questionnaire responses</CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-left whitespace-pre-line">
+                        <p>{customerProfile}</p>
+                    </CardContent>
+                    </Card>
+                ) : (
+                    <Card>
+                       <CardHeader><CardTitle>Profile Not Available</CardTitle></CardHeader>
+                       <CardContent><p>Could not load your design profile. Please ensure you completed the questionnaire.</p></CardContent>
+                    </Card>
+                )}
+                </TabsContent>
+
+                <TabsContent value="moodboards" className="mt-6">
+                {moodboards && moodboards.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {moodboards.map((moodboard) => (
+                        <Card key={moodboard.id} className="overflow-hidden">
+                        <CardHeader className="pb-2">
+                            <CardTitle>{moodboard.title}</CardTitle>
+                            <CardDescription>Created by {moodboard.createdBy === 'wizard' ? 'Design Team' : 'AI'}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-left text-sm mb-4">{moodboard.description}</p>
+                            <div className="grid grid-cols-2 gap-2">
+                            {moodboard.images.map((imageUrl, imgIndex) => (
+                                <img
+                                key={imgIndex}
+                                src={imageUrl}
+                                alt={`Moodboard image ${imgIndex + 1} for ${moodboard.title}`}
+                                className="w-full h-48 object-cover rounded-md shadow-sm"
+                                />
+                            ))}
+                            </div>
+                        </CardContent>
+                        </Card>
+                    ))}
+                    </div>
+                ) : (
+                    <Card>
+                    <CardHeader>
+                        <CardTitle>Moodboards Coming Soon</CardTitle>
+                        <CardDescription>Our design team might add moodboards based on your feedback</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-center text-muted-foreground">
+                        Check back later or provide feedback to guide the design.
+                        </p>
+                    </CardContent>
+                    </Card>
+                )}
+                </TabsContent>
+
+                <TabsContent value="recommendations" className="mt-6">
+                {recommendations && recommendations.length > 0 ? (
+                    <div className="space-y-4">
+                    {recommendations.map((recommendation) => (
+                        <Card key={recommendation.id} className="overflow-hidden">
+                        <CardHeader>
+                            <CardTitle>{recommendation.item}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-left mb-4">{recommendation.explanation}</p>
+                            {recommendation.imageUrl && (
                             <img
-                              key={imgIndex}
-                              src={imageUrl}
-                              alt={`Moodboard image ${imgIndex + 1}`}
-                              className="w-full h-48 object-cover rounded-md shadow-sm"
+                                src={recommendation.imageUrl}
+                                alt={`Recommendation image for ${recommendation.item}`}
+                                className="w-full h-48 object-cover rounded-md shadow-md"
                             />
-                          ))}
-                        </div>
-                      </CardContent>
+                            )}
+                        </CardContent>
+                        </Card>
+                    ))}
+                    </div>
+                ) : (
+                     <Card>
+                       <CardHeader><CardTitle>Recommendations Not Available</CardTitle></CardHeader>
+                       <CardContent><p>Recommendations are being generated or updated based on your profile and feedback.</p></CardContent>
                     </Card>
-                  ))}
-                </div>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Moodboards Coming Soon</CardTitle>
-                    <CardDescription>Our design team is working on your moodboards</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-center text-muted-foreground">
-                      Based on your preferences, we're crafting unique moodboards just for you.
-                      Check back soon or provide additional feedback to help us understand your style better.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="recommendations" className="mt-6">
-              {recommendations && recommendations.length > 0 ? (
-                <div className="space-y-4">
-                  {recommendations.map((recommendation) => (
-                    <Card key={recommendation.id} className="overflow-hidden">
-                      <CardHeader>
-                        <CardTitle>{recommendation.item}</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-left mb-4">{recommendation.explanation}</p>
-                        {recommendation.imageUrl && (
-                          <img
-                            src={recommendation.imageUrl}
-                            alt={`Recommendation: ${recommendation.item}`}
-                            className="w-full h-48 object-cover rounded-md shadow-md"
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <p>No recommendations available yet.</p>
-              )}
-            </TabsContent>
-          </Tabs>
-  
-          <div className="mt-8 w-full max-w-4xl">
-            <Card>
-              <CardHeader>
-                <CardTitle>Provide Feedback</CardTitle>
-                <CardDescription>
-                  Help us refine your design recommendations
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="feedback"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Your Feedback</FormLabel>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Tell us what you like or don't like about the recommendations, or any additional preferences..."
-                              className="min-h-[120px]"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button type="submit" className="w-full">Submit Feedback</Button>
-                  </form>
-                </Form>
-              </CardContent>
-            </Card>
-          </div>
-  
-          {feedback && feedback.length > 0 && (
+                )}
+                </TabsContent>
+            </Tabs>
+
+            {/* Feedback Form */}
             <div className="mt-8 w-full max-w-4xl">
-              <Card>
+                <Card>
                 <CardHeader>
-                  <CardTitle>Conversation History</CardTitle>
+                    <CardTitle>Provide Feedback</CardTitle>
+                    <CardDescription>
+                    Help us refine your design recommendations or tell us more about your style.
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {feedback.map((message) => (
-                      <div 
-                        key={message.id} 
-                        className={`p-4 rounded-lg ${
-                          message.fromUser 
-                            ? 'bg-primary/10 ml-8' 
-                            : 'bg-secondary/10 mr-8'
-                        }`}
-                      >
-                        <p className="text-sm font-medium mb-1">
-                          {message.fromUser ? 'You' : 'Design Team'}
-                        </p>
-                        <p className="text-left">{message.content}</p>
-                        <p className="text-xs text-muted-foreground text-right mt-1">
-                          {new Date(message.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
+                    <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                        <FormField
+                        control={form.control}
+                        name="feedback"
+                        render={({ field }) => (
+                            <FormItem>
+                            <FormLabel>Your Feedback</FormLabel>
+                            <FormControl>
+                                <Textarea
+                                placeholder="Tell us what you like or don't like..."
+                                className="min-h-[120px]"
+                                {...field}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                            </FormItem>
+                        )}
+                        />
+                        <Button type="submit" className="w-full" disabled={!customerProfile}>Submit Feedback</Button>
+                         {!customerProfile && <p className="text-xs text-destructive">Feedback cannot be submitted until the profile is loaded.</p>}
+                    </form>
+                    </Form>
                 </CardContent>
-              </Card>
+                </Card>
             </div>
-          )}
-        </main>
-      </div>
+
+            {/* Conversation History */}
+            {feedback && feedback.length > 0 && (
+                <div className="mt-8 w-full max-w-4xl">
+                <Card>
+                    <CardHeader>
+                    <CardTitle>Conversation History</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                    <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-4">
+                        {feedback.map((message) => (
+                        <div
+                            key={message.id}
+                             className={`p-4 rounded-lg text-left ${
+                                 message.fromUser
+                                 ? 'bg-primary/10 ml-auto w-11/12 md:w-4/5' // User message
+                                 : 'bg-secondary/10 mr-auto w-11/12 md:w-4/5' // Wizard message
+                             }`}
+                        >
+                            <p className="text-sm font-medium mb-1">
+                            {message.fromUser ? 'You' : 'Design Team'}
+                            </p>
+                            <p className="whitespace-pre-line">{message.content}</p>
+                            <p className="text-xs text-muted-foreground text-right mt-1">
+                            {new Date(message.timestamp).toLocaleString()}
+                            </p>
+                        </div>
+                        ))}
+                        <div ref={chatEndRef} />
+                    </div>
+                    </CardContent>
+                </Card>
+                </div>
+            )}
+            </main>
+        </div>
     );
-  }
+}
