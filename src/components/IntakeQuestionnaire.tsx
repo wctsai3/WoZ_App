@@ -24,6 +24,8 @@ import {useState} from 'react';
 import {Checkbox} from '@/components/ui/checkbox';
 import {Input} from '@/components/ui/input';
 import {Slider} from '@/components/ui/slider';
+import { useStateContext } from '@/lib/state-context'; // Adjust path if needed
+import { toast } from '@/components/ui/use-toast'; // Adjust path if needed
 
 const formSchema = z.object({
   projectType: z.string().min(1, {
@@ -52,6 +54,8 @@ const formSchema = z.object({
 export default function IntakeQuestionnaire() {
   const router = useRouter();
   const [date, setDate] = useState<Date>();
+  const { setSessionState } = useStateContext(); // Get function to update context state
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -77,17 +81,58 @@ export default function IntakeQuestionnaire() {
     },
   });
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log(values);
-    const searchParams = new URLSearchParams(
-      Object.fromEntries(
-        Object.entries(values).map(([key, value]) => [
-          key,
-          Array.isArray(value) ? value.join(',') : value,
-        ])
-      )
-    );
-    router.push(`/moodboards?${searchParams.toString()}`);
+  async function onSubmit(values: QuestionnaireFormValues) {
+    setIsSubmitting(true);
+    console.log('Form submitted:', values);
+
+    try {
+      // --- Call backend API to CREATE session ---
+      // Send questionnaire data (or nothing if backend handles it)
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Body: You might send 'values' if your API expects questionnaire data
+        // Or send an empty object if the API just creates a blank session
+         body: JSON.stringify({ questionnaire: values }), // Example: sending questionnaire data
+      });
+
+      if (!response.ok) {
+        // Handle API errors
+        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      }
+
+      // --- Get new session data (with ID) from response ---
+      const newSessionData = await response.json();
+
+      if (!newSessionData || !newSessionData.id) {
+        throw new Error('API did not return a valid session object with ID.');
+      }
+
+      console.log('New session created:', newSessionData);
+
+      // --- Update the global state context ---
+      setSessionState(newSessionData);
+
+      // --- Redirect to the moodboards page with the new session ID ---
+      router.push(`/moodboards?session=${newSessionData.id}`);
+
+      toast({
+        title: 'Questionnaire Submitted!',
+        description: 'Redirecting to your design recommendations...',
+      });
+
+    } catch (error) {
+      console.error('Failed to submit questionnaire or create session:', error);
+      toast({
+        title: 'Submission Failed',
+        description: 'Could not start your session. Please try again.',
+        variant: 'destructive',
+      });
+      setIsSubmitting(false); // Re-enable button on error
+    }
+    // No need to setIsSubmitting(false) on success because we redirect
   }
 
   return (
