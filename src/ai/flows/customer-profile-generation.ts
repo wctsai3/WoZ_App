@@ -21,7 +21,26 @@ const CustomerProfileOutputSchema = z.object({
 export type CustomerProfileOutput = z.infer<typeof CustomerProfileOutputSchema>;
 
 export async function generateCustomerProfile(input: CustomerProfileInput): Promise<CustomerProfileOutput> {
-  return customerProfileFlow(input);
+  // Add input validation and logging
+  console.log(`Generating customer profile with input keys: ${Object.keys(input).join(', ')}`);
+  
+  try {
+    // Sanitize input by ensuring all values are strings
+    const sanitizedInput: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input)) {
+      sanitizedInput[key] = value !== null && value !== undefined ? String(value) : '';
+    }
+    
+    // Enhanced error handling around the profile generation
+    return await customerProfileFlow(sanitizedInput);
+  } catch (error) {
+    console.error('Error in generateCustomerProfile:', error);
+    
+    // Provide a fallback profile if generation fails
+    return {
+      profileSummary: `A design profile for a client seeking interior design assistance. The client is looking for professional guidance to transform their space. Preferences include a balanced aesthetic with functional considerations. The design should accommodate the client's needs while maintaining a cohesive style throughout the space.`
+    };
+  }
 }
 
 const prompt = ai.definePrompt({
@@ -59,22 +78,66 @@ const customerProfileFlow = ai.defineFlow<
 
   while (retryCount < maxRetries) {
     try {
-      const {output} = await prompt({input: JSON.stringify(input, null, 2)});
-      return output!;
+      // Log each attempt
+      console.log(`Attempt ${retryCount + 1}/${maxRetries} to generate customer profile`);
+      
+      // Add timeout to prevent hanging requests
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 15000); // 15-second timeout
+      });
+      
+      // Race the API call against the timeout
+      const result = await Promise.race([
+        prompt({input: JSON.stringify(input, null, 2)}),
+        timeoutPromise
+      ]);
+      
+      // Check if result exists and has expected structure
+      if (!result || !result.output || !result.output.profileSummary) {
+        throw new Error('Invalid response structure from AI service');
+      }
+      
+      console.log('Successfully generated customer profile');
+      return result.output;
     } catch (error: any) {
+      console.error(`Profile generation error:`, error);
+      
       if (error.message.includes('429 Too Many Requests')) {
         retryCount++;
         console.warn(`Rate limit hit. Retrying in ${delay / 1000} seconds... (Attempt ${retryCount}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
+      } else if (error.message.includes('timeout') || error.name === 'AbortError') {
+        // Handle timeout specifically
+        retryCount++;
+        console.warn(`Request timed out. Retrying... (Attempt ${retryCount}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 1.5; // Less aggressive backoff for timeouts
       } else {
-        // If it's not a rate limit error, re-throw it
-        throw error;
+        // For any other error, try once more with different parameters
+        retryCount++;
+        console.warn(`Error during generation. Retrying with simplified input... (Attempt ${retryCount}/${maxRetries})`);
+        
+        // Simplify input on retry to focus on most important fields
+        const simplifiedInput: Record<string, string> = {};
+        const keyPriority = ['projectType', 'spaces', 'designStyles', 'budget', 'colorPalette'];
+        keyPriority.forEach(key => {
+          if (key in input && input[key]) {
+            simplifiedInput[key] = input[key];
+          }
+        });
+        
+        // Use simplified input if available, otherwise use original
+        input = Object.keys(simplifiedInput).length > 0 ? simplifiedInput : input;
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
 
-  // If we've exhausted all retries, throw an error
-  throw new Error('Failed to generate customer profile after multiple retries due to rate limiting.');
+  // If we've exhausted all retries, return a basic profile
+  console.error('Failed to generate customer profile after multiple retries');
+  return {
+    profileSummary: 'Client is looking for professional design assistance to transform their space according to their personal style preferences and functional needs. A detailed consultation is recommended to further understand their specific requirements.'
+  };
 });
-

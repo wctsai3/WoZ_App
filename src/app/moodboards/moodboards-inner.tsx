@@ -70,18 +70,18 @@ export default function MoodboardsInnerPage() {
         }
     }, [feedback]);
 
-    // Initialize session: Generate profile and recommendations if not already present
+    // Updated initSession function for moodboards-inner.tsx
     useEffect(() => {
       const initSession = async () => {
         // Get sessionId from URL
         const sessionIdFromUrl = searchParams.get('session');
-    
+
         if (!sessionIdFromUrl) {
           console.log("initSession: No session ID in URL. Redirecting.");
           router.push('/'); // Redirect if no session specified
           return;
         }
-    
+
         // If we already have a customer profile loaded for this session ID
         // (assuming getSessionId() correctly reflects the loaded session), don't regenerate.
         if (sessionState.customerProfile && getSessionId() === sessionIdFromUrl) {
@@ -89,118 +89,217 @@ export default function MoodboardsInnerPage() {
           setLoading(false);
           return;
         }
-    
+
         setLoading(true);
-    
+
         try {
           // First try to fetch the complete session data from server
+          console.log(`Fetching session data for ID: ${sessionIdFromUrl}`);
           const sessionResponse = await fetch(`/api/sessions/${sessionIdFromUrl}`);
           
           if (sessionResponse.ok) {
             const sessionData = await sessionResponse.json();
+            console.log(`Session data fetched successfully:`, JSON.stringify(sessionData).substring(0, 100) + '...');
             
             // Check if session has questionnaire data
             if (sessionData.questionnaire) {
-              console.log(`initSession: Found questionnaire data for session ${sessionIdFromUrl}. Using this to generate profile.`);
+              console.log(`Found questionnaire data for session ${sessionIdFromUrl}`);
               
-              // Use questionnaire data stored in the session
-              const params = sessionData.questionnaire;
-              
-              // Generate customer profile
-              const customerProfileResult = await generateCustomerProfile(params);
-              
-              if (!customerProfileResult?.profileSummary) {
-                throw new Error('Failed to generate customer profile');
+              try {
+                // Use questionnaire data stored in the session
+                const params = sessionData.questionnaire;
+                
+                // Generate customer profile with timeout and error handling
+                const profilePromise = generateCustomerProfile(params);
+                const timeoutPromise = new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('Profile generation timed out')), 25000)
+                );
+                
+                // Race against timeout
+                const customerProfileResult = await Promise.race([profilePromise, timeoutPromise]);
+                
+                if (!customerProfileResult?.profileSummary) {
+                  throw new Error('Generated profile is empty or invalid');
+                }
+                
+                console.log(`Profile generated successfully. Length: ${customerProfileResult.profileSummary.length} chars`);
+                
+                // Set customer profile
+                setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
+                
+                try {
+                  // Generate design recommendations with timeout
+                  console.log('Generating design recommendations');
+                  const recPromise = generateDesignRecommendations({
+                    customerProfile: customerProfileResult.profileSummary,
+                    finalMoodboardDescription: 'Initial moodboard based on customer profile',
+                  });
+                  
+                  const recTimeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Recommendation generation timed out')), 25000)
+                  );
+                  
+                  // Race against timeout
+                  const designRecommendationsResult = await Promise.race([recPromise, recTimeoutPromise]);
+                  
+                  if (designRecommendationsResult?.recommendations) {
+                    console.log(`Generated ${designRecommendationsResult.recommendations.length} recommendations`);
+                    
+                    // Process recommendations one by one to avoid state update issues
+                    for (const rec of designRecommendationsResult.recommendations) {
+                      if (rec.item && rec.explanation) {
+                        addRecommendation({
+                          item: rec.item,
+                          explanation: rec.explanation
+                        });
+                      }
+                    }
+                  } else {
+                    console.warn('No recommendations were generated');
+                    // Add a fallback recommendation
+                    addRecommendation({
+                      item: 'Design consultation',
+                      explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
+                    });
+                  }
+                } catch (recError) {
+                  console.error('Error generating recommendations:', recError);
+                  // Add fallback recommendation on error
+                  addRecommendation({
+                    item: 'Design consultation',
+                    explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
+                  });
+                }
+              } catch (profileError) {
+                console.error('Error generating profile:', profileError);
+                
+                // Attempt to set a basic profile on error to avoid blocking the flow
+                setCustomerProfile('Client seeking interior design services. Detailed preferences will be gathered during consultation.', sessionIdFromUrl);
+                
+                // Add a fallback recommendation
+                addRecommendation({
+                  item: 'Design consultation',
+                  explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
+                });
               }
               
-              console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
-              
-              // Set customer profile
-              setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
-              
-              // Generate design recommendations
+              setLoading(false);
+              return;
+            } else {
+              console.log('Session found but no questionnaire data available.');
+            }
+          } else {
+            console.warn(`Failed to fetch session data. Status: ${sessionResponse.status}`);
+          }
+          
+          // If we couldn't get questionnaire data from session, try URL parameters
+          console.log('Attempting to use URL parameters for profile generation');
+          const params = {};
+          let paramCount = 0;
+          
+          searchParams.forEach((value, key) => {
+            if (key !== 'session') {
+              params[key] = value;
+              paramCount++;
+            }
+          });
+
+          // Ensure we have questionnaire params before calling AI
+          if (paramCount === 0) {
+            console.log("No questionnaire parameters found. Cannot generate profile.");
+            setLoading(false);
+            toast({
+              title: 'Missing Information',
+              description: 'Could not find questionnaire data to initialize your session.',
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          try {
+            console.log(`Generating profile using URL parameters for session ${sessionIdFromUrl}`);
+            const profilePromise = generateCustomerProfile(params);
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Profile generation timed out')), 25000)
+            );
+            
+            // Race against timeout
+            const customerProfileResult = await Promise.race([profilePromise, timeoutPromise]);
+
+            if (!customerProfileResult?.profileSummary) {
+              throw new Error('Generated profile is empty or invalid');
+            }
+            
+            console.log('Profile generated successfully from URL parameters');
+
+            // Set customer profile
+            setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
+
+            try {
+              console.log('Generating recommendations from URL-based profile');
               const designRecommendationsResult = await generateDesignRecommendations({
                 customerProfile: customerProfileResult.profileSummary,
                 finalMoodboardDescription: 'Initial moodboard based on customer profile',
               });
-              
+
               if (designRecommendationsResult?.recommendations) {
+                console.log(`Generated ${designRecommendationsResult.recommendations.length} recommendations`);
                 designRecommendationsResult.recommendations.forEach((rec) => {
                   addRecommendation({
                     item: rec.item,
                     explanation: rec.explanation
                   });
                 });
+              } else {
+                console.warn('No recommendations were generated');
+                // Add fallback recommendation
+                addRecommendation({
+                  item: 'Design consultation',
+                  explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
+                });
               }
-              
-              setLoading(false);
-              return;
-            }
-          }
-          
-          // If we couldn't get questionnaire data from the session, try URL parameters
-          const params: { [key: string]: string } = {};
-          searchParams.forEach((value, key) => {
-            if (key !== 'session') { // Don't include session ID itself in AI params
-              params[key] = value;
-            }
-          });
-    
-          // Ensure we have questionnaire params before calling AI
-          if (Object.keys(params).length === 0) {
-            console.log("initSession: No questionnaire parameters found. Cannot generate profile.");
-            setLoading(false);
-            toast({
-              title: 'Missing Information',
-              description: 'Could not find questionnaire answers in the URL to initialize the session.',
-              variant: 'destructive',
-            });
-            return;
-          }
-    
-          console.log(`initSession: Generating profile for session ${sessionIdFromUrl}...`);
-          const customerProfileResult = await generateCustomerProfile({ ...params } as any);
-    
-          if (!customerProfileResult?.profileSummary) {
-            throw new Error('Failed to generate customer profile');
-          }
-          
-          console.log(`initSession: Profile generated. Setting profile and generating recommendations...`);
-    
-          // Set customer profile
-          setCustomerProfile(customerProfileResult.profileSummary, sessionIdFromUrl);
-    
-          const designRecommendationsResult = await generateDesignRecommendations({
-            customerProfile: customerProfileResult.profileSummary,
-            finalMoodboardDescription: 'Initial moodboard based on customer profile',
-          });
-    
-          if (designRecommendationsResult?.recommendations) {
-            console.log(`initSession: Adding ${designRecommendationsResult.recommendations.length} recommendations.`);
-            designRecommendationsResult.recommendations.forEach((rec: any) => {
+            } catch (recError) {
+              console.error('Error generating recommendations:', recError);
+              // Add fallback recommendation on error
               addRecommendation({
-                item: rec.item,
-                explanation: rec.explanation
+                item: 'Design consultation',
+                explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
               });
+            }
+          } catch (profileError) {
+            console.error('Error generating profile from URL parameters:', profileError);
+            
+            // Set basic profile as fallback
+            setCustomerProfile('Client seeking interior design services. Detailed preferences to be gathered during consultation.', sessionIdFromUrl);
+            
+            // Add fallback recommendation
+            addRecommendation({
+              item: 'Design consultation',
+              explanation: 'Our team would like to discuss your preferences in more detail to provide tailored recommendations.'
             });
           }
-    
+
         } catch (error) {
           console.error('Error initializing session:', error);
           toast({
             title: 'Initialization Error',
-            description: 'Failed to initialize your design session. Please check inputs or try again.',
+            description: 'Failed to initialize your design session. Please try again later.',
             variant: 'destructive',
           });
-          router.push('/');
+          
+          // Don't redirect on error - provide fallback content instead
+          setCustomerProfile('Design profile could not be generated. Please try again later.', sessionIdFromUrl);
+          addRecommendation({
+            item: 'Contact our design team',
+            explanation: 'Our design experts are ready to help you create your perfect space.'
+          });
         } finally {
           setLoading(false);
         }
       };
-    
+
       initSession();
-    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, getSessionId, loadSessionById]);
-    
+    }, [searchParams, router, sessionState.customerProfile, setCustomerProfile, addRecommendation, getSessionId, loadSessionById, toast]);
     
     // Update the polling useEffect
     useEffect(() => {
