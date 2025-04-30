@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     const newSessionId = nanoid(7); // Generate unique ID on the backend
+    const sessionKey = `session:${newSessionId}`;
 
     // Create the initial state for the new session
     const newSession = {
@@ -25,11 +26,12 @@ export async function POST(req: NextRequest) {
       recommendations: [],
       feedback: [],
       moodboards: [],
-      timestamp: Date.now(), // Add a timestamp
+      timestamp: Date.now(), 
       questionnaire: body.questionnaire // Store the questionnaire data
     };
 
-    await redis.set(`session:${newSessionId}`, JSON.stringify(newSession));
+    // Store as JSON string in Redis
+    await redis.set(sessionKey, JSON.stringify(newSession));
 
     console.log(`Created new session: ${newSessionId}`);
     
@@ -38,24 +40,32 @@ export async function POST(req: NextRequest) {
 
   } catch (err) {
     console.error('Error creating session:', err);
-    return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create session', details: err.message }, { status: 500 });
   }
 }
 
 // GET handler to retrieve all sessions - accessible to everyone
 export async function GET() {
     try {
+      // Get all session keys
       const keys = await redis.keys('session:*');
+      
       if (!keys || keys.length === 0) {
         return NextResponse.json([]);
       }
       
+      // Get all sessions data
       const sessions = await redis.mget(...keys);
+      
+      // Parse session data
       const parsed = sessions
         .map((s) => {
           try {
+            // Handle if Upstash returns a parsed object or a string
+            if (typeof s === 'object' && s !== null) return s;
             return typeof s === 'string' ? JSON.parse(s) : s;
-          } catch {
+          } catch (e) {
+            console.error('Error parsing session data:', e);
             return null;
           }
         })
@@ -64,6 +74,6 @@ export async function GET() {
       return NextResponse.json(parsed);
     } catch (err) {
       console.error('Error fetching sessions:', err);
-      return NextResponse.json({ error: 'Failed to load sessions' }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to load sessions', details: err.message }, { status: 500 });
     }
 }

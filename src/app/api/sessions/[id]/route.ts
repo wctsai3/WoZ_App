@@ -12,7 +12,7 @@ export async function GET(
   console.log(`Fetching session with ID: ${id}`);
 
   try {
-    // First check if the session exists
+    // Use the upstash redis client to check if session exists
     const exists = await redis.exists(`session:${id}`);
     
     if (!exists) {
@@ -35,8 +35,14 @@ export async function GET(
     }
 
     try {
-      // Attempt to parse the session data
-      const session = JSON.parse(result);
+      // If the data is already parsed (Upstash may return parsed JSON)
+      if (typeof result === 'object' && result !== null) {
+        console.log(`Successfully retrieved session ${id}`);
+        return NextResponse.json(result);
+      }
+      
+      // Otherwise parse the string
+      const session = JSON.parse(result as string);
       console.log(`Successfully retrieved session ${id}`);
       return NextResponse.json(session);
     } catch (parseError) {
@@ -108,7 +114,7 @@ export async function DELETE(
   try {
     const result = await redis.del(`session:${id}`);
     
-    if (result === 0) {
+    if (!result) {
       console.log(`Session ${id} not found for deletion`);
       return NextResponse.json(
         { error: `Session ${id} not found` },
